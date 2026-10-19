@@ -25,20 +25,20 @@ test('volver atrás borra las fechas de la pasada anterior', () => {
 })
 
 test('cambios en el mismo segundo: gana el avance', () => {
-  const t = buildTracking("Lista de Espera", [
-    { name: "Lista de Espera", at: 5 },
-    { name: "Aprobación de Diseño", at: 5 },
+  const t = buildTracking("En espera", [
+    { name: "En espera", at: 5 },
+    { name: "Aprobación de diseño", at: 5 },
     { name: "Diseño", at: 1 },
   ])
   expect(t.steps.map((s) => s.date).slice(0, 3)).toEqual([1, 5, 5])
 })
 
-test('entregado, post-entrega y ganado cuentan como 100%, con la fecha de entrega', () => {
-  for (const stage of ["Entregado", "Post-Entrega", "Lead Ganado"]) {
+test('entregado, post-entrega y logrado cuentan como 100%, con la fecha de entrega', () => {
+  for (const stage of ["Entregado", "Post-Entrega", "Logrado con éxito"]) {
     const t = buildTracking(stage, [
       { name: "Entregado", at: 5 },
       { name: "Post-Entrega", at: 6 },
-      { name: "Lead Ganado", at: 7 },
+      { name: "Logrado con éxito", at: 7 },
     ])
     expect(t.percent).toBe(100)
     expect(t.label).toBe("Pieza entregada")
@@ -47,8 +47,15 @@ test('entregado, post-entrega y ganado cuentan como 100%, con la fecha de entreg
   }
 })
 
+test('leads entrantes = diseño en curso', () => {
+  const t = buildTracking("Leads Entrantes", [{ name: "Leads Entrantes", at: 1 }])
+  expect(t.label).toBe("Diseño")
+  expect(t.percent).toBe(0)
+  expect(t.steps[0]).toEqual({ name: "Diseño", date: 1, state: "current" })
+})
+
 test('perdido = cancelado', () => {
-  const t = buildTracking("Lead Perdido", [{ name: "Diseño", at: 1 }])
+  const t = buildTracking("Ventas Perdidos", [{ name: "Diseño", at: 1 }])
   expect(t.cancelled).toBe(true)
   expect(t.steps.every((s) => s.state === "pending" && !s.date)).toBe(true)
 })

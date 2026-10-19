@@ -76,12 +76,29 @@ Cliente abre /orders/123
 - `Lead Perdido` (143) → "Pedido cancelado", 0 %.
 - La fecha de cada paso es la de la pasada actual: si el lead vuelve atrás, se borran las fechas de las etapas posteriores. La fecha de entrega es la primera entrada a Entregado / Post-Entrega / Ganado.
 
+## Cuenta de Kommo (verificado 2026-10-19)
+
+Subdominio `romerojeweler`. Embudos y etapas reales (`GET /api/v4/leads/pipelines`):
+
+| Embudo | id | Etapas (id) |
+| --- | --- | --- |
+| Ventas (principal) | 14630839 | Leads Entrantes 113046811 · Contacto Inicial 113046823 · Recontactar 113046831 · Seguimiento 113046839 · Interesado 113046847 · En Conversación 113110403 · Invoice Enviado 113110407 · Logrado con éxito 142 · Venta Perdido 143 |
+| Producción | 14639515 | Leads Entrantes 113110619 · Diseño 113110623 · Aprobación de diseño 113110627 · En espera 113110631 · Impresión 3D 113110751 · Fundición 113110755 · Trabajo en metal 113110759 · Engaste 113110763 · Acabado 113110767 · Control de calidad 113110771 · Listo para entrega 113110775 · Entregado 113110779 · Post-Entrega 113110783 · Logrado con éxito 142 · Ventas Perdidos 143 |
+
+En Producción, "Leads Entrantes" se muestra como Diseño en curso; "Post-Entrega" y "Logrado con éxito" como
+entregado; "Ventas Perdidos" como pedido cancelado.
+
+Campos personalizados: los leads solo tienen los de sistema (utm_*, referrer, gclid, fbclid…) y los
+contactos Posición, Teléfono y Email. No hay campos de producto ni de metal.
+
+Probado de punta a punta con un lead real: avance, vuelta atrás, entrega, ganado, cancelado, lead en
+Ventas (404), ids inválidos (404) y token inválido (502 + log).
+
 ## Pendientes
 
-1. **IDs reales de Kommo**: en `PRODUCCION` (`src/lib/kommo/pipeline.ts`) los ids del pipeline y de
-   sus etapas siguen en `0`. Salen de `GET /api/v4/leads/pipelines`. Mientras tanto toda URL da 404.
-   El `.env` actual tiene valores de relleno.
-2. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede
+1. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede
    ver la etapa de pedidos ajenos (la página ya no muestra el nombre del lead). Conviene un token por pedido.
-3. **Subtítulo** (p. ej. metal "14k blanco" como en la referencia): necesita el id del campo personalizado.
+2. **Fecha de la primera etapa**: un lead creado directamente en Producción no tiene evento de cambio
+   de etapa, así que esa primera etapa sale sin fecha. Los leads que pasan desde Ventas sí la tienen.
+3. **Subtítulo** (metal, como en la referencia): no existe el campo en Kommo; hay que crearlo primero.
 4. `adapter-auto` → cambiar por el adaptador del hosting final.

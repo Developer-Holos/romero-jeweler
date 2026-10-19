@@ -12,24 +12,25 @@ export type Pipeline = {
   stages: Stage[]
 }
 
-// TODO: reemplazar los 0 con los ids reales de GET /api/v4/leads/pipelines.
-// 142 (ganado) y 143 (perdido) son estados de sistema, iguales en todos los pipelines.
+// Ids y nombres reales de la cuenta romerojeweler (GET /api/v4/leads/pipelines, 2026-10-19).
+// 142 y 143 son estados de sistema (ganado/perdido), iguales en todos los embudos.
 export const PRODUCCION: Pipeline = {
-  id: 0,
+  id: 14639515,
   stages: [
-    { name: "Diseño", id: 0 },
-    { name: "Aprobación de Diseño", id: 0 },
-    { name: "Lista de Espera", id: 0 },
-    { name: "Impresión 3D", id: 0 },
-    { name: "Fundición", id: 0 },
-    { name: "Trabajo en Metal", id: 0 },
-    { name: "Engaste", id: 0 },
-    { name: "Acabado", id: 0 },
-    { name: "Control de Calidad", id: 0 },
-    { name: "Listo para Entrega", id: 0 },
-    { name: "Entregado", id: 0 },
-    { name: "Post-Entrega", id: 0 },
-    { name: "Lead Ganado", id: 142 },
-    { name: "Lead Perdido", id: 143 },
+    { name: "Leads Entrantes", id: 113110619 },
+    { name: "Diseño", id: 113110623 },
+    { name: "Aprobación de diseño", id: 113110627 },
+    { name: "En espera", id: 113110631 },
+    { name: "Impresión 3D", id: 113110751 },
+    { name: "Fundición", id: 113110755 },
+    { name: "Trabajo en metal", id: 113110759 },
+    { name: "Engaste", id: 113110763 },
+    { name: "Acabado", id: 113110767 },
+    { name: "Control de calidad", id: 113110771 },
+    { name: "Listo para entrega", id: 113110775 },
+    { name: "Entregado", id: 113110779 },
+    { name: "Post-Entrega", id: 113110783 },
+    { name: "Logrado con éxito", id: 142 },
+    { name: "Ventas Perdidos", id: 143 },
   ]
 }

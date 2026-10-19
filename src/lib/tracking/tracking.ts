@@ -2,16 +2,18 @@ import { PRODUCCION, type StageChange } from "#lib/kommo/pipeline.ts"
 
 const NAMES = PRODUCCION.stages.map((s) => s.name)
 
-/** Etapas que ve el cliente, en orden: las de PRODUCCION hasta "Entregado". */
-const STEPS = NAMES.slice(0, NAMES.indexOf("Entregado") + 1)
+/** Etapas que ve el cliente, en orden: las de PRODUCCION de "Diseño" a "Entregado". */
+const STEPS = NAMES.slice(NAMES.indexOf("Diseño"), NAMES.indexOf("Entregado") + 1)
 const LAST = STEPS.length - 1
 
-const DELIVERED = ["Entregado", "Post-Entrega", "Lead Ganado"]
-const CANCELLED = "Lead Perdido"
+/** Recién pasado a producción, aún sin empezar: se muestra como Diseño en curso. */
+const QUEUED = "Leads Entrantes"
+const DELIVERED = ["Entregado", "Post-Entrega", "Logrado con éxito"]
+const CANCELLED = "Ventas Perdidos"
 
 // Falla al arrancar, no en cada visita, si pipeline.ts tiene una etapa que el tracking no sabe mostrar
-// (también si falta "Entregado": STEPS queda vacío y todas las etapas sobran).
-const unknown = NAMES.filter((n) => !STEPS.includes(n) && !DELIVERED.includes(n) && n !== CANCELLED)
+// (también si falta "Diseño" o "Entregado": STEPS queda mal y sobran etapas).
+const unknown = NAMES.filter((n) => !STEPS.includes(n) && !DELIVERED.includes(n) && n !== CANCELLED && n !== QUEUED)
 if (unknown.length) throw new Error(`tracking.ts no sabe mostrar estas etapas de PRODUCCION: ${unknown.join(", ")}`)
 
 export type StepState = "done" | "current" | "pending"
@@ -24,6 +26,7 @@ export type Tracking = {
 }
 
 function stepIndex(name: string): number {
+  if (name === QUEUED) return 0
   if (DELIVERED.includes(name)) return LAST
   const i = STEPS.indexOf(name)
   if (i < 0) throw new Error(`Etapa de producción desconocida: ${name}`)
@@ -44,7 +47,7 @@ export function buildTracking(stageName: string, changes: StageChange[] = []): T
     if (change.name === CANCELLED) continue
     const i = stepIndex(change.name)
     for (let k = i + 1; k <= LAST; k++) delete dates[k]
-    // Entregado → Post-Entrega → Ganado: la fecha de entrega es la primera.
+    // Entregado → Post-Entrega → Logrado con éxito: la fecha de entrega es la primera.
     dates[i] = i === LAST ? (dates[LAST] ?? change.at) : change.at
   }
 
