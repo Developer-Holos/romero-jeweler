@@ -1,31 +1,43 @@
-import type { Stage } from "#lib/kommo/kommo.ts"
-
-type AppStage = {
-  weight: number,
-  name: string
-}
-
-const APP_STAGES: AppStage[] = [
-  { name: "Diseño", weight: 0 },
-  { name: "Aprobación de Diseño", weight: 1 },
-  { name: "Lista de Espera", weight: 2 },
-  { name: "Impresión 3D", weight: 3 },
-  { name: "Fundición", weight: 4 },
-  { name: "Trabajo en Metal", weight: 5 },
-  { name: "Engaste", weight: 6 },
-  { name: "Acabado", weight: 7 },
-  { name: "Control de Calidad", weight: 8 },
-  { name: "Listo para Entrega", weight: 9 },
-  { name: "Entregado", weight: 10 },
-  { name: "Pedido Cancelado", weight: 11 },
+/** Etapas que ve el cliente, en orden. Los nombres coinciden con las etapas de PRODUCCION en Kommo. */
+const STEPS = [
+  "Diseño",
+  "Aprobación de Diseño",
+  "Lista de Espera",
+  "Impresión 3D",
+  "Fundición",
+  "Trabajo en Metal",
+  "Engaste",
+  "Acabado",
+  "Control de Calidad",
+  "Listo para Entrega",
+  "Entregado",
 ]
 
-export function normalizeTrackingStatus(stage: Stage): AppStage {
-  const found = APP_STAGES.find((s) => s.name === stage.name);
+const DELIVERED = ["Entregado", "Post-Entrega", "Lead Ganado"]
 
-  if (found) return found;
-  if (stage.name === "Lead Ganado") return APP_STAGES[10];
-  if (stage.name === "Lead Perdido") return APP_STAGES[11];
+export type StepState = "done" | "current" | "pending"
 
-  return APP_STAGES[0];
+export type Tracking = {
+  steps: { name: string; date?: number; state: StepState }[];
+  percent: number;
+  label: string;
+  cancelled: boolean;
+}
+
+/** stageName: etapa actual del lead en Kommo. dates: fecha de entrada a cada etapa, por nombre. */
+export function buildTracking(stageName: string, dates: Record<string, number> = {}): Tracking {
+  const cancelled = stageName === "Lead Perdido"
+  const last = STEPS.length - 1
+  const current = cancelled ? -1 : DELIVERED.includes(stageName) ? last : Math.max(STEPS.indexOf(stageName), 0)
+
+  return {
+    steps: STEPS.map((name, i) => ({
+      name,
+      date: i <= current ? dates[name] : undefined,
+      state: i < current || current === last ? "done" : i === current ? "current" : "pending",
+    })),
+    percent: cancelled ? 0 : Math.round((current / last) * 100),
+    label: cancelled ? "Pedido cancelado" : current === last ? "Pieza entregada" : STEPS[current],
+    cancelled,
+  }
 }

@@ -1,9 +1,7 @@
 /** Handles requests from Kommo **/
-import type { HTTPMethods, Result } from '#lib';
+import type { Result } from '#lib';
+import { standardFetcher } from '#lib/fetcher.ts';
 import { KOMMO_SUBDOMAIN, KOMMO_ACCESS_TOKEN } from '$app/env/private';
-
-const SUBDOMAIN = KOMMO_SUBDOMAIN;
-const ACCESS_TOKEN = KOMMO_ACCESS_TOKEN;
 
 export type Stage = {
   name: string,
@@ -15,40 +13,26 @@ export type Pipeline = {
   stages: Stage[]
 }
 
-const PIPELINES: Record<"VENTAS" | "PRODUCCION", Pipeline> = {
-  VENTAS: {
-    id: 0,
-    stages: [
-      { name: "Lead Entrante", id: 0 },
-      { name: "Contacto Inicial", id: 0 },
-      { name: "Recontactar", id: 0 },
-      { name: "Seguimiento", id: 0 },
-      { name: "Interesado", id: 0 },
-      { name: "En Conversación", id: 0 },
-      { name: "Invoice Enviado", id: 0 },
-      { name: "Lead Ganado", id: 0 },
-      { name: "Lead Perdido", id: 0 },
-    ]
-  },
-  PRODUCCION: {
-    id: 0,
-    stages: [
-      { name: "Diseño", id: 0 },
-      { name: "Aprobación de Diseño", id: 0 },
-      { name: "Lista de Espera", id: 0 },
-      { name: "Impresión 3D", id: 0 },
-      { name: "Fundición", id: 0 },
-      { name: "Trabajo en Metal", id: 0 },
-      { name: "Engaste", id: 0 },
-      { name: "Acabado", id: 0 },
-      { name: "Control de Calidad", id: 0 },
-      { name: "Listo para Entrega", id: 0 },
-      { name: "Entregado", id: 0 },
-      { name: "Post-Entrega", id: 0 },
-      { name: "Lead Ganado", id: 0 },
-      { name: "Lead Perdido", id: 0 },
-    ]
-  }
+// TODO: reemplazar los 0 con los ids reales de GET /api/v4/leads/pipelines.
+// 142 (ganado) y 143 (perdido) son estados de sistema, iguales en todos los pipelines.
+const PRODUCCION: Pipeline = {
+  id: 0,
+  stages: [
+    { name: "Diseño", id: 0 },
+    { name: "Aprobación de Diseño", id: 0 },
+    { name: "Lista de Espera", id: 0 },
+    { name: "Impresión 3D", id: 0 },
+    { name: "Fundición", id: 0 },
+    { name: "Trabajo en Metal", id: 0 },
+    { name: "Engaste", id: 0 },
+    { name: "Acabado", id: 0 },
+    { name: "Control de Calidad", id: 0 },
+    { name: "Listo para Entrega", id: 0 },
+    { name: "Entregado", id: 0 },
+    { name: "Post-Entrega", id: 0 },
+    { name: "Lead Ganado", id: 142 },
+    { name: "Lead Perdido", id: 143 },
+  ]
 }
 
 export type KommoServiceArgs = {
@@ -77,159 +61,45 @@ export type KommoLead = {
   };
 }
 
-export type KommoUser = {
-  id: number;
-  name: string;
-  email: string;
-};
-
-export type KommoContact = {
-  id: number;
-  name: string;
-  first_name: string;
-  last_name: string;
-  custom_fields_values: Array<{
-    field_id: number;
-    field_code: string | null;
-    values: Array<{ value: unknown }>;
-  }> | null;
-};
-
-export type KommoPipeline = {
-  id: number;
-  name: string;
+type KommoEvents = {
   _embedded: {
-    statuses: Array<{
-      id: number;
-      name: string;
-      pipeline_id: number;
+    events: Array<{
+      created_at: number;
+      value_after: Array<{ lead_status?: { id: number; pipeline_id: number } }>;
     }>;
   };
 };
 
-function kommoFetcher({ token, subdomain }: KommoServiceArgs) {
-  function trimEndpoint(endpoint: string) {
-    if (endpoint.startsWith("/")) { endpoint = endpoint.substring(1) }
-    return endpoint
+export function KommoService({ subdomain, token }: KommoServiceArgs = { subdomain: KOMMO_SUBDOMAIN, token: KOMMO_ACCESS_TOKEN }) {
+  const fetcher = standardFetcher({ base: `https://${subdomain}.kommo.com` })
+  const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+  function getLead(leadId: number): Promise<Result<KommoLead>> {
+    return fetcher.request<KommoLead>({ method: "GET", endpoint: `/api/v4/leads/${leadId}`, headers })
   }
 
-  function constructOptions(
-    method: HTTPMethods,
-    body?: any,
-    headers?: Record<string, string>
-  ) {
-    let options: any = {
-      method,
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...headers
-      }
+  /** Fecha (unix s) en que el lead entró a cada etapa de producción, por nombre de etapa. */
+  async function getStageDates(leadId: number): Promise<Record<string, number>> {
+    // ponytail: una sola página de 100 eventos; de sobra para un pedido.
+    const res = await fetcher.request<KommoEvents | null>({
+      method: "GET",
+      endpoint: `/api/v4/events?filter[entity]=lead&filter[entity_id]=${leadId}&filter[type]=lead_status_changed&limit=100`,
+      headers
+    })
+    const dates: Record<string, number> = {}
+    if (!res.success || !res.data) return dates // sin eventos (204) o error: la página se muestra sin fechas
+    for (const event of res.data._embedded.events) {
+      const status = event.value_after[0]?.lead_status
+      const stage = status?.pipeline_id === PRODUCCION.id && PRODUCCION.stages.find((s) => s.id === status.id)
+      if (stage) dates[stage.name] = Math.max(dates[stage.name] ?? 0, event.created_at)
     }
-    if (method != "GET" && body) {
-      try {
-        options["body"] = JSON.stringify(body);
-      } catch (e) {
-        throw Error("Error while parsing JSON")
-      }
-    }
-    return options
+    return dates
   }
 
-  function getRetryTime(response: Response) {
-    const retryAfterHeader = response.headers.get("Retry-After");
-    return retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : 2000;
+  function getLeadProductionStage(lead: KommoLead): Stage | undefined {
+    if (lead.pipeline_id !== PRODUCCION.id) return undefined
+    return PRODUCCION.stages.find((stage) => stage.id === lead.status_id)
   }
 
-  async function doFetch<T>(url: string, options: RequestInit, retries = 3): Promise<Result<T>> {
-    try {
-      let response = await fetch(url, options);
-      if (response.status === 204) {
-        return { success: true, data: null as unknown as T };
-      }
-
-      if (response.status === 429) {
-        if (retries <= 0) {
-          return {
-            success: false,
-            error: `Kommo API Error [429 Too Many Requests]: Se superaron los reintentos máximos permitidos.`,
-            status: 429,
-          };
-        }
-
-        await new Promise((r) => setTimeout(r, getRetryTime(response)));
-        return doFetch<T>(url, options, retries - 1);
-      }
-
-      const text = await response.text();
-      let data: any = text ? JSON.parse(text) : null;
-
-      if (!response.ok) {
-        const errorDetail = (typeof data === "object" && data !== null) ? JSON.stringify(data) : text;
-        return {
-          success: false,
-          error: `Kommo API Error [${response.status} ${response.statusText}]: ${errorDetail}`,
-          status: response.status,
-        };
-      }
-
-      return {
-        success: true,
-        data,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: `Kommo API Network Error: ${error.message}`,
-        status: 500,
-      };
-    }
-  }
-
-  async function request<T>(method: HTTPMethods, endpoint: string, body?: any, headers?: Record<string, string>): Promise<Result<T>> {
-    endpoint = trimEndpoint(endpoint)
-    let options = constructOptions(method, body, headers)
-    let result = await doFetch<T>(`https://${subdomain}.kommo.com/${endpoint}`, options)
-    return result
-  }
-
-  return {
-    request
-  }
-}
-
-function getFieldValue(leadObject: KommoLead, customFieldId: number) {
-  let field = leadObject.custom_fields_values?.find((obj) => obj.field_id === customFieldId);
-  return field ? field.values[0].value : null;
-}
-
-export function KommoService(args?: KommoServiceArgs) {
-  let subdomain: string = ""
-  let token: string = ""
-
-  if (args) {
-    subdomain = args.subdomain
-    token = args.token
-  } else {
-    subdomain = SUBDOMAIN
-    token = ACCESS_TOKEN
-  }
-
-  let fetcher = kommoFetcher({ subdomain, token })
-
-  async function getLead(leadId: number): Promise<Result<KommoLead>> {
-    let response = await fetcher.request<KommoLead>("GET", `/api/v4/leads/${leadId}`)
-    return response
-  }
-
-  function leadIsInProduction(lead: KommoLead): boolean {
-    return lead.pipeline_id === PIPELINES.PRODUCCION.id
-  }
-
-  function getLeadProductionStage(lead: KommoLead) {
-    return PIPELINES.PRODUCCION.stages.find((stage) => stage.id === lead.status_id)!
-  }
-
-  return { getLead, leadIsInProduction, getLeadProductionStage }
+  return { getLead, getStageDates, getLeadProductionStage }
 }
