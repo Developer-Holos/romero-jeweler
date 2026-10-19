@@ -2,38 +2,7 @@
 import type { Result } from '#lib';
 import { standardFetcher } from '#lib/fetcher.ts';
 import { KOMMO_SUBDOMAIN, KOMMO_ACCESS_TOKEN } from '$app/env/private';
-
-export type Stage = {
-  name: string,
-  id: number
-}
-
-export type Pipeline = {
-  id: number,
-  stages: Stage[]
-}
-
-// TODO: reemplazar los 0 con los ids reales de GET /api/v4/leads/pipelines.
-// 142 (ganado) y 143 (perdido) son estados de sistema, iguales en todos los pipelines.
-const PRODUCCION: Pipeline = {
-  id: 0,
-  stages: [
-    { name: "Diseño", id: 0 },
-    { name: "Aprobación de Diseño", id: 0 },
-    { name: "Lista de Espera", id: 0 },
-    { name: "Impresión 3D", id: 0 },
-    { name: "Fundición", id: 0 },
-    { name: "Trabajo en Metal", id: 0 },
-    { name: "Engaste", id: 0 },
-    { name: "Acabado", id: 0 },
-    { name: "Control de Calidad", id: 0 },
-    { name: "Listo para Entrega", id: 0 },
-    { name: "Entregado", id: 0 },
-    { name: "Post-Entrega", id: 0 },
-    { name: "Lead Ganado", id: 142 },
-    { name: "Lead Perdido", id: 143 },
-  ]
-}
+import { PRODUCCION, type Stage, type StageChange } from '#lib/kommo/pipeline.ts';
 
 export type KommoServiceArgs = {
   subdomain: string,
@@ -78,22 +47,30 @@ export function KommoService({ subdomain, token }: KommoServiceArgs = { subdomai
     return fetcher.request<KommoLead>({ method: "GET", endpoint: `/api/v4/leads/${leadId}`, headers })
   }
 
-  /** Fecha (unix s) en que el lead entró a cada etapa de producción, por nombre de etapa. */
-  async function getStageDates(leadId: number): Promise<Record<string, number>> {
-    // ponytail: una sola página de 100 eventos; de sobra para un pedido.
-    const res = await fetcher.request<KommoEvents | null>({
-      method: "GET",
-      endpoint: `/api/v4/events?filter[entity]=lead&filter[entity_id]=${leadId}&filter[type]=lead_status_changed&limit=100`,
-      headers
-    })
-    const dates: Record<string, number> = {}
-    if (!res.success || !res.data) return dates // sin eventos (204) o error: la página se muestra sin fechas
-    for (const event of res.data._embedded.events) {
-      const status = event.value_after[0]?.lead_status
-      const stage = status?.pipeline_id === PRODUCCION.id && PRODUCCION.stages.find((s) => s.id === status.id)
-      if (stage) dates[stage.name] = Math.max(dates[stage.name] ?? 0, event.created_at)
+  /** Historial de entradas del lead a etapas de PRODUCCION. */
+  async function getStageChanges(leadId: number): Promise<Result<StageChange[]>> {
+    const changes: StageChange[] = []
+    // ponytail: tope de 10 páginas (1000 cambios de etapa), de sobra para un pedido.
+    for (let page = 1; ; page++) {
+      const res = await fetcher.request<KommoEvents | null>({
+        method: "GET",
+        endpoint: `/api/v4/events?filter[entity]=lead&filter[entity_id]=${leadId}&filter[type]=lead_status_changed&limit=100&page=${page}`,
+        headers
+      })
+      if (!res.success) return res
+      const events = res.data?._embedded?.events ?? [] // 204 = no hay más eventos
+      for (const event of events) {
+        const status = event.value_after[0]?.lead_status
+        const stage = status?.pipeline_id === PRODUCCION.id && PRODUCCION.stages.find((s) => s.id === status.id)
+        if (stage) changes.push({ name: stage.name, at: event.created_at })
+      }
+      if (events.length < 100) break
+      if (page === 10) {
+        console.warn(`[tracking] lead ${leadId}: más de 1000 cambios de etapa, historial truncado`)
+        break
+      }
     }
-    return dates
+    return { success: true, data: changes }
   }
 
   function getLeadProductionStage(lead: KommoLead): Stage | undefined {
@@ -101,5 +78,5 @@ export function KommoService({ subdomain, token }: KommoServiceArgs = { subdomai
     return PRODUCCION.stages.find((stage) => stage.id === lead.status_id)
   }
 
-  return { getLead, getStageDates, getLeadProductionStage }
+  return { getLead, getStageChanges, getLeadProductionStage }
 }

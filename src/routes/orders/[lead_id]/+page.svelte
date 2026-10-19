@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { PageProps } from "./$types";
   let { data }: PageProps = $props();
-  let { name, tracking } = $derived(data);
+  let { tracking } = $derived(data);
 
+  // Zona fija: servidor y navegador muestran el mismo día.
   const formatDate = (unix: number) =>
-    new Date(unix * 1000).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric" });
+    new Date(unix * 1000).toLocaleDateString("es", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Guayaquil" });
 </script>
 
 <svelte:head>
@@ -18,7 +19,7 @@
       <div class="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-amber-100 text-amber-600">
         <svg class="size-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12l4 6-10 13L2 9Z" /><path d="M11 3 8 9l4 13 4-13-3-6" /><path d="M2 9h20" /></svg>
       </div>
-      <h1 class="text-xl font-bold">{name}</h1>
+      <h1 class="text-xl font-bold">Seguimiento de tu pieza</h1>
     </header>
 
     <section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">

@@ -40,7 +40,8 @@ src/
 ├── lib/
 │   ├── index.ts                   # tipos compartidos: HTTPMethods, Result<T>
 │   ├── fetcher.ts                 # fetcher HTTP genérico (base URL, reintentos en 429)
-│   ├── kommo/kommo.ts             # cliente Kommo (sobre fetcher.ts): pipeline PRODUCCION, lead, fechas de etapas
+│   ├── kommo/pipeline.ts          # pipeline PRODUCCION: única lista de etapas (nombre + id)
+│   ├── kommo/kommo.ts             # cliente Kommo (sobre fetcher.ts): lead e historial de etapas
 │   └── tracking/tracking.ts(+test) # etapa de Kommo → pasos, % y texto que ve el cliente
 └── routes/
     ├── +layout.svelte             # layout raíz (Tailwind + favicon)
@@ -59,27 +60,28 @@ references/images/                 # capturas del diseño de referencia (joyerok
 ```
 Cliente abre /orders/123
   └─ +page.server.ts (load)
-       ├─ lead_id no entero                     → 404
-       ├─ getLead(id)  GET /api/v4/leads/{id}   → no existe: 404
+       ├─ lead_id no es solo dígitos            → 404
+       ├─ getLead(id)          GET /api/v4/leads/{id}  → no existe: 404 · otro error: log + 502
        ├─ getLeadProductionStage(lead)          → no está en PRODUCCION: 404
-       ├─ getStageDates(id)  GET /api/v4/events?filter[type]=lead_status_changed
-       └─ buildTracking(etapa, fechas)          → { steps, percent, label, cancelled }
-  └─ +page.svelte: nombre del lead, tarjeta de progreso y línea de tiempo con fechas
+       ├─ getStageChanges(id)  GET /api/v4/events (paginado, máx. 1000) → error: log, sin fechas
+       └─ buildTracking(etapa, historial)       → { steps, percent, label, cancelled }
+  └─ +page.svelte: tarjeta de progreso y línea de tiempo con fechas (hora de Ecuador)
 ```
 
 ### Reglas de `buildTracking`
 
-- 11 pasos visibles, de **Diseño** a **Entregado**, con los mismos nombres que las etapas de PRODUCCION en Kommo.
+- 11 pasos visibles: las etapas de `PRODUCCION` (`pipeline.ts`) de **Diseño** a **Entregado**. Si `pipeline.ts` tiene una etapa que el tracking no sabe mostrar, la app falla al arrancar.
+- Cambios de etapa en el mismo segundo: se ordena primero la etapa más adelantada que el lead dejó atrás (gana el avance).
 - `Post-Entrega` y `Lead Ganado` (142) → Entregado, 100 %, "Pieza entregada".
 - `Lead Perdido` (143) → "Pedido cancelado", 0 %.
-- La fecha de cada paso es la última vez que el lead entró a esa etapa.
+- La fecha de cada paso es la de la pasada actual: si el lead vuelve atrás, se borran las fechas de las etapas posteriores. La fecha de entrega es la primera entrada a Entregado / Post-Entrega / Ganado.
 
 ## Pendientes
 
-1. **IDs reales de Kommo**: en `PRODUCCION` (`src/lib/kommo/kommo.ts`) los ids del pipeline y de
+1. **IDs reales de Kommo**: en `PRODUCCION` (`src/lib/kommo/pipeline.ts`) los ids del pipeline y de
    sus etapas siguen en `0`. Salen de `GET /api/v4/leads/pipelines`. Mientras tanto toda URL da 404.
    El `.env` actual tiene valores de relleno.
 2. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede
-   ver pedidos ajenos. Conviene usar un token por pedido guardado en un campo personalizado del lead.
+   ver la etapa de pedidos ajenos (la página ya no muestra el nombre del lead). Conviene un token por pedido.
 3. **Subtítulo** (p. ej. metal "14k blanco" como en la referencia): necesita el id del campo personalizado.
 4. `adapter-auto` → cambiar por el adaptador del hosting final.
