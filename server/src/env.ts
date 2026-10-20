@@ -9,8 +9,8 @@ function requerida(nombre: string) {
 
 export const env = {
 	PORT: Number(process.env.PORT) || 8787,
-	// Clave compartida con el widget: viaja en el header Authorization.
-	WIDGET_API_KEY: requerida("WIDGET_API_KEY"),
+	// Clave compartida con el widget (ajuste "Clave del widget" en Kommo): viaja en el header X-Widget-Key.
+	WIDGET_KEY: requerida("WIDGET_KEY"),
 	// Orígenes que pueden llamar al servidor (la cuenta de Kommo y el widget en desarrollo).
 	ORIGENES: (process.env.ORIGENES ?? "https://romerojeweler.kommo.com,http://localhost:5173,http://localhost:4173").split(",").map((o) => o.trim()).filter(Boolean),
 	// Sin clave de OpenAI el servidor arranca igual; /ia responde 503.

@@ -1,6 +1,7 @@
-// API que usa el widget de invoice de Kommo. Todo, menos /salud, pide la clave del widget.
+// API que usa el widget de invoice de Kommo. Todo, menos /salud, pide la clave del widget
+// en el header X-Widget-Key (igual que los otros widgets de Kommo con proxy).
+import { timingSafeEqual } from "node:crypto";
 import { Hono } from "hono";
-import { bearerAuth } from "hono/bearer-auth";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { env } from "./env.ts";
@@ -12,11 +13,20 @@ const MB = 1024 * 1024;
 
 export const app = new Hono();
 
-app.use("*", cors({ origin: (o) => (env.ORIGENES.includes(o) ? o : null), allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "PUT", "POST"], maxAge: 600 }));
+app.use("*", cors({ origin: (o) => (env.ORIGENES.includes(o) ? o : null), allowHeaders: ["X-Widget-Key", "Content-Type"], allowMethods: ["GET", "PUT", "POST"], maxAge: 600 }));
 
 app.get("/salud", (c) => c.json({ ok: true, ia: !!env.OPENAI_API_KEY }));
 
-app.use("*", bearerAuth({ token: env.WIDGET_API_KEY }));
+const claveOk = (recibida: string | undefined) => {
+	const a = Buffer.from(recibida ?? "");
+	const b = Buffer.from(env.WIDGET_KEY);
+	return a.length === b.length && timingSafeEqual(a, b);
+};
+
+app.use("*", async (c, next) => {
+	if (!claveOk(c.req.header("X-Widget-Key"))) return c.json({ error: "Clave del widget inválida" }, 401);
+	await next();
+});
 
 app.get("/plantilla", async (c) => c.json({ plantilla: await leerPlantilla() }));
 

@@ -1,15 +1,15 @@
-// Mockup del widget de invoice: datos simulados del lead y borrador del formulario.
-// Todo vive en el navegador; nada se envía a Kommo ni a la IA.
+// Borrador del invoice: lo que el asesor llena en el widget de la tarjeta del lead.
+// Los datos del lead llegan de Kommo (widget/script.js); los montos se calculan aquí, nunca en la IA.
 
-export const LEAD = {
+export type Lead = { id: number; nombre: string; contacto: string; email: string; responsable: string; presupuesto: number };
+
+// Lead de muestra para el diseñador y para probar fuera de Kommo.
+export const LEAD_EJEMPLO: Lead = {
 	id: 21458233,
 	nombre: "Anillo de boda · Milena",
 	contacto: "Milena Suarez Besada",
 	email: "suarezmilena387@gmail.com",
-	telefono: "+1 305 555 0142",
 	presupuesto: 2140,
-	embudo: "Ventas",
-	etapa: "En Conversación",
 	responsable: "Yan Romero",
 };
 
@@ -55,12 +55,10 @@ export const CLAUSULAS: { id: string; nombre: string; params: Param[] }[] = [
 	{ id: "terminos", nombre: "Términos y aceptación", params: [] },
 ];
 
-// Archivos que el cliente o el asesor ya compartieron en el chat del lead.
-export const ARCHIVOS_LEAD = [
-	{ id: "render-frontal", nombre: "render_frontal.png", tono: 42 },
-	{ id: "render-lateral", nombre: "render_lateral.png", tono: 38 },
-	{ id: "ref-cliente", nombre: "referencia_cliente.jpg", tono: 205 },
-	{ id: "boceto", nombre: "boceto_mano.jpg", tono: 25 },
+// Imágenes dibujadas (Thumb.svelte) para el invoice de muestra del diseñador.
+export const IMAGENES_MUESTRA = [
+	{ id: "muestra-1", tono: 42 },
+	{ id: "muestra-2", tono: 205 },
 ];
 
 let siguienteId = 10;
@@ -75,42 +73,47 @@ export const PLANES = [
 	{ nombre: "Pago completo", crear: () => [dep("Pago completo", MOMENTOS_PAGO[0])] },
 ];
 
-export function borradorInicial() {
+const hoy = () => {
+	const f = new Date();
+	return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+};
+
+export function borradorInicial(lead: Lead) {
 	const depositos = PLANES[0].crear();
 	return {
 		sinCliente: false,
-		cliente: LEAD.contacto,
-		email: LEAD.email,
-		emision: "2026-10-19",
+		cliente: lead.contacto,
+		email: lead.email,
+		emision: hoy(),
 		vencimiento: VENCIMIENTOS[0],
-		preparadoPor: LEAD.responsable,
+		preparadoPor: lead.responsable,
 		idioma: "es" as "es" | "en",
 
-		pieza: "Anillo de boda para hombre",
+		pieza: "",
 		aMedida: true,
 		metal: "amarillo" as Metal,
 		metalOtro: "",
 		kilates: "14k",
 		solido: true,
-		piedras: [{ id: 1, tipo: "Diamante", origen: "natural", corte: "Redondo", tamano: "2 mm", cantidad: "6–7", posicion: "pave" }] as Piedra[],
+		piedras: [] as Piedra[],
 		talla: "",
 		tallaPorConfirmar: true,
 		grabado: "",
 		origen: false,
-		notas: "Diamantes color D-F, corte excelente, claridad VS. La cantidad final depende del diseño.",
+		notas: "",
 
-		valor: LEAD.presupuesto,
+		valor: lead.presupuesto,
 		conTax: true,
 		taxPct: 0,
 		depositos,
 		cobrarAhora: depositos[0].id,
 
-		entregaDesde: "2026-11-05",
+		entregaDesde: "",
 		entregaHasta: "",
 		envio: true,
 		pickup: true,
 
-		imagenes: ["render-frontal"] as string[],
+		imagenes: [] as string[],
 		// texto null = se usa el texto estándar, que se arma con los valores de `params`.
 		clausulas: Object.fromEntries(CLAUSULAS.map((c) => [c.id, { activa: true, texto: null as string | null }])),
 		params: { diasSaldo: 15, medios: "tarjeta de crédito, tarjeta de débito o PayPal", ciudadPickup: "Miami", diasOrigen: "7 y 15", costoTalla: 100, diasAjuste: 60, mesesGarantia: 12 },
@@ -120,7 +123,52 @@ export function borradorInicial() {
 
 export type Borrador = ReturnType<typeof borradorInicial>;
 
-export const draft: Borrador = $state(borradorInicial());
+// Invoice completo de muestra: así el diseñador muestra todos los bloques con contenido.
+export function borradorEjemplo(): Borrador {
+	return {
+		...borradorInicial(LEAD_EJEMPLO),
+		pieza: "Anillo de boda para hombre",
+		piedras: [{ id: siguienteId++, tipo: "Diamante", origen: "natural", corte: "Redondo", tamano: "2 mm", cantidad: "6–7", posicion: "pave" }],
+		notas: "Diamantes color D-F, corte excelente, claridad VS. La cantidad final depende del diseño.",
+		entregaDesde: hoy(),
+		imagenes: [IMAGENES_MUESTRA[0].id],
+	};
+}
+
+// El borrador de cada lead se guarda en el navegador para no perderlo al cerrar la ventana.
+const claveBorrador = (leadId: number) => `rj-invoice-borrador-${leadId}`;
+
+export function cargarBorrador(lead: Lead): Borrador {
+	const base = borradorInicial(lead);
+	try {
+		const guardado = JSON.parse(localStorage.getItem(claveBorrador(lead.id)) ?? "null") as Partial<Borrador> | null;
+		if (!guardado || typeof guardado !== "object") return base;
+		const d: Borrador = { ...base, ...guardado, params: { ...base.params, ...guardado.params }, clausulas: { ...base.clausulas, ...guardado.clausulas } };
+		// Las imágenes subidas no sobreviven a cerrar la ventana.
+		d.imagenes = [];
+		siguienteId = Math.max(siguienteId, ...d.piedras.map((p) => p.id + 1), ...d.depositos.map((x) => x.id + 1));
+		if (!d.depositos.length) Object.assign(d, { depositos: base.depositos, cobrarAhora: base.depositos[0].id });
+		return d;
+	} catch {
+		return base;
+	}
+}
+
+export function guardarBorrador(leadId: number, d: Borrador) {
+	try {
+		localStorage.setItem(claveBorrador(leadId), JSON.stringify(d));
+	} catch {
+		// modo privado: el borrador solo dura mientras la ventana esté abierta
+	}
+}
+
+export function olvidarBorrador(leadId: number) {
+	try {
+		localStorage.removeItem(claveBorrador(leadId));
+	} catch {}
+}
+
+export const draft: Borrador = $state(borradorInicial(LEAD_EJEMPLO));
 
 export function nuevaPiedra(): Piedra {
 	return { id: siguienteId++, tipo: "Diamante", origen: "laboratorio", corte: "Redondo", tamano: "", cantidad: "1", posicion: "lateral" };

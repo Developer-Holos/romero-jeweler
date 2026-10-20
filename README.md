@@ -94,11 +94,34 @@ contactos Posición, Teléfono y Email. No hay campos de producto ni de metal.
 Probado de punta a punta con un lead real: avance, vuelta atrás, entrega, ganado, cancelado, lead en
 Ventas (404), ids inválidos (404) y token inválido (502 + log).
 
-## Widget de invoice (`/kommo`) y su servidor (`server/`)
+## Widget de invoice de Kommo (`widget/`) y su servidor (`server/`)
 
-El widget de Kommo es solo la interfaz: el generador de invoices (`/kommo`) y el editor del diseño del
-PDF (`/kommo/diseno`). El trabajo pesado lo hace un **servidor aparte** (`server/`, Node + Hono) al que
-el widget llama por URL:
+El widget es solo la interfaz; el trabajo pesado lo hace un **servidor aparte** que el widget llama por URL.
+
+**En Kommo** (`widget/`, mismo formato que los demás widgets de Holos: AMD + jQuery, `i18n`, logos):
+
+- **Tarjeta del lead** (`lcard-1`): botón **Generar invoice** que abre una ventana flotante con el formulario
+  y la vista previa. Llega precargado con el contacto principal, su correo, el responsable y el precio del
+  lead. El borrador de cada lead se guarda en el navegador. Al generar, el PDF se descarga.
+- **Ajustes avanzados** (`advanced_settings`): el editor del diseño del invoice (orden de bloques, colores,
+  tipografía, logo, pie). Es el mismo para todos los asesores (se guarda en el servidor).
+- **Ajustes** (`settings`): *URL del servidor* y *Clave del widget*.
+
+El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`, compilados en
+`widget/app.js` (`vite.widget.config.ts`) y montados dentro de un Shadow DOM para que su CSS y el de Kommo no
+se mezclen. `script.js` descarga `app.js` recién al primer uso.
+
+```sh
+pnpm widget:zip   # compila app.js y arma widget/invoice-romero-jeweler.zip (manifest.json en la raíz)
+```
+
+En Kommo: **Ajustes → Integraciones → Crear integración → Subir widget**, con ese zip. Después completar la
+URL del servidor (sin barra final) y la misma `WIDGET_KEY` del servidor.
+
+Para probar fuera de Kommo están `/kommo` (generador con un lead de muestra) y `/kommo/diseno`, que leen
+`SERVIDOR_URL` y `SERVIDOR_KEY` del `.env` raíz.
+
+**El servidor** (`server/`, Node + Hono):
 
 | Ruta | Qué hace |
 | --- | --- |
@@ -107,17 +130,15 @@ el widget llama por URL:
 | `POST /ia/redactar` | OpenAI pule la descripción y traduce al inglés. Si la IA cambia una cifra, ese bloque queda con el texto original |
 | `POST /pdf` | HTML de la vista previa → PDF carta con Chromium (Playwright) |
 
-Todo menos `/salud` pide `Authorization: Bearer <WIDGET_API_KEY>`, y solo responde a los orígenes de `ORIGENES`.
+Todo menos `/salud` pide el header `X-Widget-Key`, y solo responde a los orígenes de `ORIGENES` (agregar ahí
+el dominio de la cuenta de Kommo).
 
 ```sh
-cp server/.env.example server/.env   # completar WIDGET_API_KEY y OPENAI_API_KEY
+cp server/.env.example server/.env   # completar WIDGET_KEY y OPENAI_API_KEY
 pnpm install                         # instala también Chromium para el servidor
 pnpm --filter jeweler-servidor dev   # http://localhost:8787
 pnpm --filter jeweler-servidor test
 ```
-
-El widget lee `SERVIDOR_URL` y `SERVIDOR_KEY` del `.env` raíz (públicas: la clave llega al navegador). Sin
-`SERVIDOR_URL` el widget funciona igual, pero no genera el PDF y el diseño queda solo en el navegador.
 
 ## Pendientes
 

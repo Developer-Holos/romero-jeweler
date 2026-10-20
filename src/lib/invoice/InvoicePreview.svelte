@@ -13,7 +13,7 @@
 </script>
 
 <script lang="ts">
-	import { ARCHIVOS_LEAD, CLAUSULAS, fechaLarga, tituloPieza, money, negritas, numeroFactura, pctTexto, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
+	import { CLAUSULAS, IMAGENES_MUESTRA, fechaLarga, tituloPieza, money, negritas, numeroFactura, pctTexto, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
 	import { BLOQUES, ESPACIADOS, variables, type Bloque, type Plantilla } from "./plantilla.svelte";
 	import type { Redaccion } from "./servidor";
 	import Thumb from "./Thumb.svelte";
@@ -24,7 +24,7 @@
 
 	let t = $derived(totales(d));
 	let lineas = $derived(redaccion?.vinetas ?? vinetas(d));
-	let imagenes = $derived(d.imagenes.map((id) => ({ id, tono: ARCHIVOS_LEAD.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })));
+	let imagenes = $derived(d.imagenes.map((id) => ({ id, tono: IMAGENES_MUESTRA.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })));
 	let clausulas = $derived(CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ ...c, texto: textoClausula(c.id, d), ...redaccion?.clausulas.find((r) => r.id === c.id) })));
 	let politicas = $derived(clausulas.filter((c) => !["pago", "produccion", "terminos"].includes(c.id)));
 	let anillo = $derived(d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza");

@@ -93,7 +93,7 @@ export const plantilla: Plantilla = $state(cargar());
 
 // Trae la plantilla compartida. Si el servidor aún no tiene ninguna, se queda la local.
 export async function cargarPlantillaServidor() {
-	if (!hayServidor) return;
+	if (!hayServidor()) return;
 	try {
 		const remota = await leerPlantillaServidor();
 		if (remota) Object.assign(plantilla, normalizar(remota));

@@ -1,6 +1,6 @@
 // Cliente del servidor externo del widget (carpeta server/): genera el PDF, redacta con IA
-// y guarda la plantilla de diseño compartida.
-import { SERVIDOR_KEY, SERVIDOR_URL } from "$app/env/public";
+// y guarda la plantilla de diseño compartida. La URL y la clave vienen de los ajustes del
+// widget en Kommo (o del .env al probar fuera de Kommo), vía configurarServidor().
 
 export type Redaccion = {
 	titulo: string;
@@ -9,7 +9,13 @@ export type Redaccion = {
 	descartadas: string[];
 };
 
-export const hayServidor = !!SERVIDOR_URL;
+let servidor = { url: "", clave: "" };
+
+export function configurarServidor(url: string | undefined, clave: string | undefined) {
+	servidor = { url: (url ?? "").trim().replace(/\/+$/, ""), clave: (clave ?? "").trim() };
+}
+
+export const hayServidor = () => !!servidor.url;
 
 export class ErrorServidor extends Error {
 	constructor(mensaje: string, readonly status: number) {
@@ -18,12 +24,12 @@ export class ErrorServidor extends Error {
 }
 
 async function pedir(ruta: string, init: RequestInit = {}) {
-	if (!SERVIDOR_URL) throw new ErrorServidor("El widget no tiene configurada la URL del servidor", 0);
+	if (!servidor.url) throw new ErrorServidor("Falta configurar la URL del servidor en los ajustes del widget", 0);
 	let res: Response;
 	try {
-		res = await fetch(SERVIDOR_URL.replace(/\/$/, "") + ruta, {
+		res = await fetch(servidor.url + ruta, {
 			...init,
-			headers: { Authorization: `Bearer ${SERVIDOR_KEY ?? ""}`, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
+			headers: { "X-Widget-Key": servidor.clave, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
 		});
 	} catch {
 		throw new ErrorServidor("No hay conexión con el servidor del widget", 0);
@@ -62,7 +68,9 @@ export async function htmlDelInvoice(articulo: HTMLElement) {
 	for (const img of clon.querySelectorAll("img")) {
 		if (img.src.startsWith("blob:")) img.src = await aDataUrl(img.src);
 	}
-	const css = [...document.styleSheets]
+	// Dentro de Kommo la vista previa vive en un Shadow DOM con sus propias hojas de estilo.
+	const raiz = articulo.getRootNode() as Document | ShadowRoot;
+	const css = [...raiz.styleSheets, ...raiz.adoptedStyleSheets]
 		.map((hoja) => {
 			try {
 				return [...hoja.cssRules].map((r) => r.cssText).join("\n");

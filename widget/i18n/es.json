@@ -1,0 +1,22 @@
+{
+  "widget": {
+    "name": "Invoice Romero Jeweler",
+    "short_description": "Genera el invoice en PDF desde la tarjeta del lead, con el diseño de la joyería.",
+    "description": "Agrega a la tarjeta del lead un botón \"Generar invoice\" que abre una ventana con el formulario del invoice (cliente, pieza, precio y depósitos, entrega, imágenes y condiciones) y su vista previa. Al generarlo, la IA pule la descripción (o la traduce al inglés) y el PDF se descarga. El diseño del invoice (orden de los bloques, colores, tipografía, logo y pie) se edita en los ajustes avanzados del widget y es el mismo para todos los asesores."
+  },
+  "settings": {
+    "proxy_url": "URL del servidor",
+    "widget_key": "Clave del widget"
+  },
+  "advanced": {
+    "title": "Diseño del invoice"
+  },
+  "labels": {
+    "card_hint": "Arma el invoice de este lead y descárgalo en PDF.",
+    "card_button": "Generar invoice",
+    "loading": "Cargando…",
+    "error_settings": "Falta configurar la URL del servidor y la clave en los ajustes del widget.",
+    "error_app": "No se pudo cargar el generador de invoices. Recarga la página e intenta de nuevo.",
+    "error_lead": "No se pudieron leer los datos del lead."
+  }
+}

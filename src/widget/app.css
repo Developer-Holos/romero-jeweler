@@ -1,0 +1,5 @@
+/* Estilos del widget: los mismos de la app (Tailwind + colores de Romero Jeweler),
+   compilados solo con las clases que usan los componentes del invoice. */
+@import "../routes/layout.css";
+
+@source "../lib/invoice";
