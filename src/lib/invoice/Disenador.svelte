@@ -43,6 +43,20 @@
 		return () => clearTimeout(espera);
 	});
 
+	// Incrustado en Kommo: el contenedor no tiene altura propia, así que el diseñador llega desde donde empieza
+	// hasta el borde inferior de la ventana. Se vuelve a medir cuando Kommo termina de armar la página y al redimensionar.
+	let alto = $state<number | null>(null);
+	function medir() {
+		if (incrustado && mainEl) alto = Math.max(560, Math.round(innerHeight - mainEl.getBoundingClientRect().top - 24));
+	}
+	onMount(() => {
+		if (!incrustado) return;
+		medir();
+		const timers = [150, 600].map((ms) => setTimeout(medir, ms));
+		addEventListener("resize", medir);
+		return () => (timers.forEach(clearTimeout), removeEventListener("resize", medir));
+	});
+
 	const indice = (id: BloqueId) => p.bloques.findIndex((b) => b.id === id);
 
 	function soltar() {
@@ -423,7 +437,7 @@
 	</div>
 {/snippet}
 
-<main bind:this={mainEl} class="flex flex-col overflow-hidden text-slate-800 {incrustado ? 'h-[calc(100vh-170px)] min-h-[560px]' : 'h-dvh bg-km-canvas p-0 sm:p-4 lg:p-6'} {arrastrando ? 'cursor-grabbing select-none [&_*]:cursor-grabbing' : ''}">
+<main bind:this={mainEl} style:height={incrustado && alto ? `${alto}px` : undefined} class="flex flex-col overflow-hidden text-slate-800 {incrustado ? 'h-[calc(100vh-170px)] min-h-[560px]' : 'h-dvh bg-km-canvas p-0 sm:p-4 lg:p-6'} {arrastrando ? 'cursor-grabbing select-none [&_*]:cursor-grabbing' : ''}">
 	<div class="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col overflow-hidden bg-white {incrustado ? 'rounded-xl border border-slate-200' : 'shadow-xl sm:rounded-xl'}">
 		<header class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 px-5 py-3 sm:px-6">
 			{#if volverHref}
