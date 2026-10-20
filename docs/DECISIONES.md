@@ -10,7 +10,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 
 | # | Decisión | Estado | Qué falta |
 | --- | --- | --- | --- |
-| 1 | PDF al campo "Invoice" (archivo) del lead | Por verificar | Crear el campo en Kommo y probar la subida con la cuenta real |
+| 1 | PDF al campo "Invoice" (archivo) del lead | Por verificar | Campo creado (id 133486); probar la subida con la cuenta real |
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
 | 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
 | 4 | Railway, cuenta de Holos | Externo | Crear el servicio con el `Dockerfile` |
@@ -21,12 +21,15 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 9 | Borrador en el servidor, por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
-| 12 | Campos de producto y precio del lead solo lectura | Hecho · Externo | Crear los campos en Kommo |
+| 12 | Campos de producto y precio del lead solo lectura | Por verificar | Campos creados; probar la precarga con un lead real |
 | 13 | El servidor se queda en este repo | Hecho | — |
 | 14 | Instalación privada; la hace y la prueba Holos | Externo | Instalar y probar con un lead real |
 
 **Bloquea producción:** #3 (formato), #4 (servidor publicado), #6 (prueba con OpenAI), #10 (textos de Romero),
 #11 (sales tax) y #14 (prueba en la cuenta real, que cubre también #1, #8 y #12).
+
+**Ids de los campos en Kommo** (cuenta `romerojeweler`, leads): Invoice 133486 · Metal 133508 · Quilates 133510 ·
+Piedra 133562 · Talla 133564.
 
 ---
 
@@ -41,7 +44,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
   completo queda en la tabla `invoices` de Postgres.
 
 **Falta:**
-- Crear el campo "Invoice" (tipo archivo) en la cuenta de Romero y poner su id en `KOMMO_CAMPO_INVOICE`.
+- ~~Crear el campo "Invoice"~~ Creado el 2026-10-20: **id 133486**, tipo archivo. Va en `KOMMO_CAMPO_INVOICE`.
 - **Verificar con la cuenta real** que la API de Kommo Drive y el formato del valor del campo archivo funcionen como
   los implementé (están según la documentación de la API v4; solo se probaron contra un Kommo simulado). Si no se
   puede, volver a esta decisión.
@@ -172,15 +175,18 @@ qué porcentaje. Según eso se quita la línea, se precarga un valor o se calcul
 **Decisión:** crear campos de producto y precargarlos; el precio del lead es solo lectura.
 
 **Hecho:**
-- El widget lee los campos **Metal**, **Quilates**, **Piedra** y **Talla** del lead **por nombre** (no por id) y los
-  precarga en el invoice, con la etiqueta "Lead". El metal se reconoce si contiene "amarillo", "blanco", "rosa" o
+- El widget lee los campos **Metal** (133508), **Quilates** (133510), **Piedra** (133562) y **Talla** (133564) del
+  lead **por id** (`CAMPOS_PRODUCTO` en `widget/script.js`); si un id no aparece, los busca por nombre. Los precarga
+  en el invoice, con la etiqueta "Lead". El metal se reconoce si contiene "amarillo", "blanco", "rosa" o
   "platino"; si no, va como "Otro" con el texto tal cual.
 - El precio del lead solo se lee (como presupuesto); el widget nunca lo modifica.
 
-**Falta (Holos, en la cuenta de Romero):** crear los campos con esos nombres exactos. Sugerencia de tipos: Metal
-(lista: Oro amarillo, Oro blanco, Oro rosa, Platino), Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante,
-Esmeralda, Zafiro, Rubí, Moissanita, Morganita) y Talla (texto). Verificar en la cuenta real el nombre del
-responsable (`APP.constant('managers')`) y que el panel aparezca a la primera.
+**Campos creados** el 2026-10-20 en la cuenta de Romero: Metal (lista: Oro amarillo, Oro blanco, Oro rosa, Platino),
+Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rubí, Moissanita, Morganita) y Talla
+(texto).
+
+**Falta:** probar la precarga con un lead real, y verificar ahí el nombre del responsable
+(`APP.constant('managers')`) y que el panel aparezca a la primera.
 
 ## 13. Repositorio del servidor
 

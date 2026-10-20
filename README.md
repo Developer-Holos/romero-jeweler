@@ -147,9 +147,17 @@ pnpm --filter jeweler-servidor dev   # http://localhost:8787 (sin DATABASE_URL u
 pnpm --filter jeweler-servidor test
 ```
 
-**Configuración en Kommo (cuenta de Romero):** campo **Invoice** (tipo archivo) en los leads, con su id en
-`KOMMO_CAMPO_INVOICE`, y campos **Metal**, **Quilates**, **Piedra** y **Talla** (se leen por nombre). Detalle en
-`docs/DECISIONES.md`.
+**Campos de los leads en Kommo (cuenta `romerojeweler`):**
+
+| Campo | Tipo | Id | Lo usa |
+| --- | --- | --- | --- |
+| Invoice | Archivo | 133486 | El servidor guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
+| Metal | Lista | 133508 | El widget lo precarga (`CAMPOS_PRODUCTO` en `widget/script.js`) |
+| Quilates | Lista | 133510 | Ídem |
+| Piedra | Lista | 133562 | Ídem |
+| Talla | Texto | 133564 | Ídem |
+
+Los campos de producto se buscan por id y, si no aparecen, por nombre.
 
 ## Pendientes
 

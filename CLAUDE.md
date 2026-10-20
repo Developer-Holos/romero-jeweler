@@ -38,7 +38,9 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   Romero los edita en la pestaña Textos del diseñador. No escribir textos legales en el código.
 - Los montos los calcula el widget; la IA nunca los cambia. El servidor descarta cualquier texto en el que la IA
   haya alterado una cifra o el mes de una fecha (`server/src/ia.ts`, `validar`).
-- El precio del lead es solo lectura. Los campos de producto (Metal, Quilates, Piedra, Talla) se leen por nombre.
+- El precio del lead es solo lectura. Los campos de producto se leen por id (`CAMPOS_PRODUCTO` en `widget/script.js`:
+  Metal 133508, Quilates 133510, Piedra 133562, Talla 133564) y, si no aparecen, por nombre. El campo Invoice es el
+  133486 (`KOMMO_CAMPO_INVOICE`).
 
 ## Comandos
 

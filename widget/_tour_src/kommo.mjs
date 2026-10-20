@@ -62,10 +62,10 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 		price: 3850,
 		responsible_user_id: 7,
 		custom_fields_values: [
-			{ field_name: "Metal", values: [{ value: "Oro blanco" }] },
-			{ field_name: "Quilates", values: [{ value: "14k" }] },
-			{ field_name: "Piedra", values: [{ value: "Diamante" }] },
-			{ field_name: "Talla", values: [{ value: "6" }] },
+			{ field_id: 133508, field_name: "Metal de la pieza", values: [{ value: "Oro blanco" }] },
+			{ field_id: 133510, field_name: "Quilates", values: [{ value: "14k" }] },
+			{ field_id: 133562, field_name: "Piedra", values: [{ value: "Diamante" }] },
+			{ field_id: 133564, field_name: "Talla", values: [{ value: "6" }] },
 		],
 		_embedded: { contacts: [{ id: 55, is_main: true }] },
 	};

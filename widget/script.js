@@ -16,6 +16,15 @@ define(['jquery'], function ($) {
     //   widget (carpeta server/ del repo), con la URL y la clave de los ajustes.
 
     var ROOT_ID = 'rj-invoice-root';
+
+    // Campos de producto de los leads en la cuenta romerojeweler (Ajustes → Campos).
+    // Si un id no aparece en el lead (otra cuenta, campo recreado), se busca por nombre.
+    var CAMPOS_PRODUCTO = {
+      metal: { id: 133508, nombre: 'metal' },
+      quilates: { id: 133510, nombre: 'quilates' },
+      piedra: { id: 133562, nombre: 'piedra' },
+      talla: { id: 133564, nombre: 'talla' }
+    };
     var appPromise = null;
     var desmontarDisenador = null;
 
@@ -181,16 +190,21 @@ define(['jquery'], function ($) {
         });
     };
 
-    // Campos de producto del lead, por nombre (Metal, Quilates, Piedra, Talla): así no dependen del id
-    // que Kommo les asigne en cada cuenta. Ver docs/DECISIONES.md, #12.
+    // Campos de producto del lead (Metal, Quilates, Piedra, Talla). Ver docs/DECISIONES.md, #12.
     this.producto = function (lead) {
       var campos = lead.custom_fields_values || [];
-      function valor(nombre) {
-        var campo = campos.filter(function (f) { return String(f.field_name || '').trim().toLowerCase() === nombre; })[0];
+      function valor(c) {
+        var campo = campos.filter(function (f) { return f.field_id === c.id; })[0] ||
+          campos.filter(function (f) { return String(f.field_name || '').trim().toLowerCase() === c.nombre; })[0];
         var v = campo && campo.values && campo.values[0] && campo.values[0].value;
         return v == null ? '' : String(v);
       }
-      return { metal: valor('metal'), quilates: valor('quilates'), piedra: valor('piedra'), talla: valor('talla') };
+      return {
+        metal: valor(CAMPOS_PRODUCTO.metal),
+        quilates: valor(CAMPOS_PRODUCTO.quilates),
+        piedra: valor(CAMPOS_PRODUCTO.piedra),
+        talla: valor(CAMPOS_PRODUCTO.talla)
+      };
     };
 
     this.fieldValue = function (entity, code) {
