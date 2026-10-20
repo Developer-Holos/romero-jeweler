@@ -10,14 +10,14 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 
 | # | Decisión | Estado | Qué falta |
 | --- | --- | --- | --- |
-| 1 | PDF al campo "Invoice" (archivo) del lead | Por verificar | Campo creado (id 133486); probar la subida con la cuenta real |
+| 1 | PDF al campo "Invoice" (archivo) del lead | Hecho | API verificada con la cuenta real; falta la prueba desde el widget (#14) |
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
 | 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
 | 4 | Railway, cuenta de Holos | Externo | Crear el servicio con el `Dockerfile` |
 | 5 | Clave fija, sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
-| 8 | Imágenes en Kommo | Por verificar | Probar con la cuenta real; adjuntos de chats sin resolver |
+| 8 | Imágenes en Kommo | Hecho | API verificada con la cuenta real; adjuntos de chats sin resolver |
 | 9 | Borrador en el servidor, por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
@@ -26,7 +26,10 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 14 | Instalación privada; la hace y la prueba Holos | Externo | Instalar y probar con un lead real |
 
 **Bloquea producción:** #3 (formato), #4 (servidor publicado), #6 (prueba con OpenAI), #10 (textos de Romero),
-#11 (sales tax) y #14 (prueba en la cuenta real, que cubre también #1, #8 y #12).
+#11 (sales tax) y #14 (prueba con el widget instalado en la cuenta real, que cubre también #12).
+
+**Lead de prueba en Kommo:** 407872 ("prueba", embudo Ventas). Quedaron en él, de la verificación del 2026-10-20,
+`PRUEBA-widget-invoice.pdf` en el campo Invoice y `PRUEBA-widget-imagen.png` como archivo adjunto.
 
 **Ids de los campos en Kommo** (cuenta `romerojeweler`, leads): Invoice 133486 · Metal 133508 · Quilates 133510 ·
 Piedra 133562 · Talla 133564.
@@ -45,9 +48,11 @@ Piedra 133562 · Talla 133564.
 
 **Falta:**
 - ~~Crear el campo "Invoice"~~ Creado el 2026-10-20: **id 133486**, tipo archivo. Va en `KOMMO_CAMPO_INVOICE`.
-- **Verificar con la cuenta real** que la API de Kommo Drive y el formato del valor del campo archivo funcionen como
-  los implementé (están según la documentación de la API v4; solo se probaron contra un Kommo simulado). Si no se
-  puede, volver a esta decisión.
+- ~~Verificar la API con la cuenta real~~ **Verificado el 2026-10-20** con `server/src/kommo.ts` y el token de la
+  cuenta, en el lead de prueba 407872: la subida a Kommo Drive (`drive-c.kommo.com`, sesión + partes) devuelve
+  `uuid` y `version_uuid`, y el campo Invoice acepta el valor `{ file_uuid, version_uuid, file_name, file_size }`
+  (Kommo corrige `file_size` con el tamaño real).
+- Falta la prueba completa desde el widget instalado (#14).
 
 ## 2. Base de datos
 
@@ -137,8 +142,11 @@ tope por clave, ver #5).
 - El borrador guarda solo las referencias (uuid), y las imágenes pasan por el servidor porque Kommo Drive pide el
   token.
 
+**Verificado el 2026-10-20** con la cuenta real (lead de prueba 407872): subir una imagen, adjuntarla al lead,
+listarla entre los archivos del lead y descargarla (mismos bytes). Kommo devuelve el nombre sin extensión; el tipo se
+reconoce por el metadato del archivo.
+
 **Falta:**
-- **Verificar con la cuenta real** subida, listado y descarga (igual que #1).
 - Los adjuntos que el cliente manda por **WhatsApp o Instagram** no son archivos del lead en Kommo: no aparecen.
   Para usarlos, el asesor los adjunta al lead o los sube desde el widget. Si hace falta leerlos directo del chat,
   es otra investigación de la API.
@@ -183,7 +191,7 @@ qué porcentaje. Según eso se quita la línea, se precarga un valor o se calcul
 
 **Campos creados** el 2026-10-20 en la cuenta de Romero: Metal (lista: Oro amarillo, Oro blanco, Oro rosa, Platino),
 Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rubí, Moissanita, Morganita) y Talla
-(texto).
+(área de texto). Tipos y opciones verificados por API el 2026-10-20.
 
 **Falta:** probar la precarga con un lead real, y verificar ahí el nombre del responsable
 (`APP.constant('managers')`) y que el panel aparezca a la primera.

@@ -88,8 +88,9 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
   `widget/_tour_src/en.mjs` para las capturas en inglés.
 - El servidor exige `WIDGET_KEY` y solo responde a los orígenes de `ORIGENES` (agregar el dominio de Kommo).
   `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget.
-- **API de Kommo Drive y campo archivo** (`server/src/kommo.ts`): implementada según la documentación, probada solo
-  contra el Kommo simulado. Si algo falla en la cuenta real, empezar por ahí.
+- **API de Kommo Drive y campo archivo** (`server/src/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
+  el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
+  nunca uno de un cliente.
 - **Número del invoice**: lo asigna `POST /invoices/numero` con un upsert atómico; no armar números en el widget.
 - El `Dockerfile` usa la imagen de Playwright: su versión debe coincidir con `playwright` del lockfile.
 
