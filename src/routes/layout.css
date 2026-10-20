@@ -2,4 +2,9 @@
 
 @theme {
 	--font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+	--color-rj-navy: #1c2150;
+	--color-rj-navy-soft: #e8e9f1;
+	--color-rj-gold: #b08d57;
+	--color-rj-gold-soft: #f5eee2;
+	--color-km-canvas: #eef1f5;
 }
