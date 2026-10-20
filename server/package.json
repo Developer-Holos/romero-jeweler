@@ -11,13 +11,16 @@
 		"postinstall": "playwright install --only-shell chromium"
 	},
 	"dependencies": {
+		"@electric-sql/pglite": "^0.5.10",
 		"@hono/node-server": "^2.1.5",
 		"hono": "^4.13.13",
 		"openai": "^7.39.0",
+		"pg": "^8.23.1",
 		"playwright": "^1.60.0"
 	},
 	"devDependencies": {
 		"@types/node": "^26.6.5",
+		"@types/pg": "^8.23.1",
 		"tsx": "^4.23.15",
 		"typescript": "^6.0.3"
 	}

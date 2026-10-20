@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 process.env.WIDGET_KEY ??= "test";
-const { mismasCifras, validar } = await import("./ia.ts");
+const { mismasCifras, mismosMeses, validar } = await import("./ia.ts");
 
 const pedido = {
 	idioma: "en" as const,
@@ -26,6 +26,14 @@ describe("mismasCifras", () => {
 	});
 });
 
+describe("mismosMeses", () => {
+	it("exige el mismo mes al traducir una fecha", () => {
+		assert.equal(mismosMeses("1 al 8 de diciembre de 2026", "December 1–8, 2026", "en"), true);
+		assert.equal(mismosMeses("1 al 8 de diciembre de 2026", "November 1–8, 2026", "en"), false);
+		assert.equal(mismosMeses("Sin fechas", "No dates", "en"), true);
+	});
+});
+
 describe("validar", () => {
 	it("usa la redacción cuando respeta las cifras", () => {
 		const r = validar(pedido, {
@@ -35,6 +43,7 @@ describe("validar", () => {
 				{ id: "pago", nombre: "Payment terms", texto: "**Deposit 1 (50%)** of $1,070.00 is due to start production." },
 				{ id: "garantia", nombre: "Warranty", texto: "**1 year** on setting." },
 			],
+			etiquetas: [],
 		});
 		assert.deepEqual(r.descartadas, []);
 		assert.equal(r.clausulas[0].nombre, "Payment terms");
@@ -48,6 +57,7 @@ describe("validar", () => {
 				{ id: "pago", nombre: "Payment terms", texto: "**Deposit 1 (50%)** of $1,000.00 is due." },
 				{ id: "garantia", nombre: "Warranty", texto: "**1 year** on setting." },
 			],
+			etiquetas: [],
 		});
 		assert.deepEqual(r.descartadas, ["descripcion", "pago"]);
 		assert.deepEqual(r.vinetas, pedido.vinetas);
@@ -55,8 +65,20 @@ describe("validar", () => {
 		assert.equal(r.clausulas[1].nombre, "Warranty");
 	});
 
+	it("traduce las etiquetas y deja la original donde cambió una fecha", () => {
+		const conEtiquetas = { ...pedido, clausulas: [], etiquetas: [{ clave: "factura_no", texto: "Factura No." }, { clave: "emision", texto: "20 de octubre de 2026" }, { clave: "total_ahora", texto: "Total a pagar ahora" }] };
+		const r = validar(conEtiquetas, {
+			titulo: "x",
+			vinetas: pedido.vinetas,
+			clausulas: [],
+			etiquetas: [{ clave: "factura_no", texto: "Invoice No." }, { clave: "emision", texto: "November 20, 2026" }],
+		});
+		assert.deepEqual(r.etiquetas, [{ clave: "factura_no", texto: "Invoice No." }, { clave: "emision", texto: "20 de octubre de 2026" }, { clave: "total_ahora", texto: "Total a pagar ahora" }]);
+		assert.deepEqual(r.descartadas, ["etiqueta:emision", "etiqueta:total_ahora"]);
+	});
+
 	it("conserva una cláusula que la IA omitió", () => {
-		const r = validar(pedido, { titulo: "x", vinetas: pedido.vinetas, clausulas: [] });
+		const r = validar(pedido, { titulo: "x", vinetas: pedido.vinetas, clausulas: [], etiquetas: [] });
 		assert.deepEqual(r.clausulas, pedido.clausulas);
 		assert.deepEqual(r.descartadas, ["pago", "garantia"]);
 	});
