@@ -45,7 +45,7 @@
     "proxy_url": {
       "name": "settings.proxy_url",
       "type": "text",
-      "required": true
+      "required": false
     },
     "widget_key": {
       "name": "settings.widget_key",

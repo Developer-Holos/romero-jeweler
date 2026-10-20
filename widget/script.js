@@ -18,6 +18,9 @@ define(['jquery'], function ($) {
 
     var ROOT_ID = 'rj-invoice-root';
 
+    // Servidor del widget publicado en Railway. El ajuste "URL del servidor" solo hace falta para usar otro.
+    var SERVIDOR_POR_DEFECTO = 'https://romero-jeweler-production.up.railway.app';
+
     // Campos de producto de los leads en la cuenta romerojeweler (Ajustes → Campos).
     // Si un id no aparece en el lead (otra cuenta, campo recreado), se busca por nombre.
     var CAMPOS_PRODUCTO = {
@@ -94,7 +97,7 @@ define(['jquery'], function ($) {
 
     this.servidor = function () {
       var settings = self.get_settings() || {};
-      return { url: settings.proxy_url || '', clave: settings.widget_key || '' };
+      return { url: (settings.proxy_url || '').trim() || SERVIDOR_POR_DEFECTO, clave: settings.widget_key || '' };
     };
 
     // ─── Tarjeta del lead ─────────────────────────────────────────────────────

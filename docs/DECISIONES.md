@@ -13,7 +13,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 1 | PDF al campo "Invoice" (archivo) del lead | Hecho | API verificada con la cuenta real; falta la prueba desde el widget (#14) |
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
 | 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
-| 4 | Railway, cuenta de Holos | Externo | Crear el servicio con el `Dockerfile` |
+| 4 | Railway, cuenta de Holos | Hecho | Publicado; falta agregarle Postgres y las variables |
 | 5 | Clave opcional (basta la URL), sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
@@ -81,6 +81,8 @@ WASM) en `server/data/`, para desarrollar y para los tests.
 ## 4. Dónde se publica el servidor
 
 **Decisión:** Railway, en la cuenta de Holos.
+
+**Publicado** en `https://romero-jeweler-production.up.railway.app` (el widget lo usa por defecto).
 
 **Hecho:** `server/Dockerfile` (imagen oficial de Playwright, con Chromium) y `server/railway.json` (healthcheck en
 `/salud`). Se construye desde la raíz del repo.
@@ -214,6 +216,7 @@ Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rub
 
 **Falta (Holos):**
 1. `pnpm widget:zip` y subir `widget/invoice-romero-jeweler.zip` en Ajustes → Integraciones → Crear integración.
-2. En los ajustes del widget: URL del servidor de Railway (y la clave, solo si se definió `WIDGET_KEY`).
+2. Nada más que configurar: el widget ya apunta al servidor de Railway (`https://romero-jeweler-production.up.railway.app`). Los ajustes solo hacen
+   falta para usar otro servidor o si se definió `WIDGET_KEY`.
 3. Probar con un lead real: precarga del lead (#12), imágenes (#8), generar (número, PDF en el campo Invoice, #1 y
    #3), un invoice en inglés (#7) y el diseñador con los textos de Romero (#10).

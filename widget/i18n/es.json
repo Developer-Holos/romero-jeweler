@@ -3,10 +3,10 @@
     "name": "Invoice Romero Jeweler",
     "short_description": "Genera el invoice en PDF desde la tarjeta del lead y lo guarda en el lead.",
     "description": "Agrega a la tarjeta del lead un botón \"Generar invoice\" que abre una ventana con el formulario del invoice (cliente, pieza, precio y depósitos, entrega, imágenes y condiciones) y su vista previa. Al generarlo recibe un número correlativo, la IA pule la descripción (o traduce todo al inglés) y el PDF se guarda en el campo \"Invoice\" del lead y se descarga. El borrador queda guardado en el lead para cualquier asesor. El diseño y los textos legales del invoice se editan en los ajustes avanzados del widget.",
-    "tour_description": "Genera el invoice en PDF desde la tarjeta del lead, con el diseño de la joyería.\n\n1. En Ajustes del widget pon la URL del servidor.\n2. Abre un lead y pulsa 'Generar invoice' en el panel del widget: el contacto, el correo y el presupuesto ya vienen cargados.\n3. Llena la pieza (metal, piedras, talla) y los depósitos; la vista previa se actualiza al instante.\n4. Pulsa 'Generar invoice': recibe su número, la IA pule el texto y el PDF se guarda en el campo 'Invoice' del lead y se descarga.\n5. Para cambiar colores, orden de los bloques, logo o los textos legales, ve a Ajustes avanzados del widget. El diseño es el mismo para todo el equipo.\n\n¿Necesitas ayuda? Escríbenos a soporte@holos.ec"
+    "tour_description": "Genera el invoice en PDF desde la tarjeta del lead, con el diseño de la joyería.\n\n1. Abre un lead y pulsa 'Generar invoice' en el panel del widget: el contacto, el correo y el presupuesto ya vienen cargados.\n2. Llena la pieza (metal, piedras, talla) y los depósitos; la vista previa se actualiza al instante.\n3. Pulsa 'Generar invoice': recibe su número, la IA pule el texto y el PDF se guarda en el campo 'Invoice' del lead y se descarga.\n4. Para cambiar colores, orden de los bloques, logo o los textos legales, ve a Ajustes avanzados del widget. El diseño es el mismo para todo el equipo.\n\n¿Necesitas ayuda? Escríbenos a soporte@holos.ec"
   },
   "settings": {
-    "proxy_url": "URL del servidor",
+    "proxy_url": "URL del servidor (opcional; por defecto el de Railway)",
     "widget_key": "Clave del widget (opcional)"
   },
   "advanced": {

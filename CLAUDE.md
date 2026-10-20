@@ -20,8 +20,8 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   PDF, IA, correlativo, borradores, plantilla, y subir archivos a Kommo. Cuando se dice "el servidor" se habla
   de `server/`, no de rutas de SvelteKit.
 - `widget/script.js` sigue el formato de los demás widgets de Holos (AMD + jQuery ES5, `i18n` es/en,
-  `loadCSS` manual, `render_template` + `ensureMounted` de respaldo). Ajustes `proxy_url` + `widget_key`;
-  la clave viaja en el header `X-Widget-Key`.
+  `loadCSS` manual, `render_template` + `ensureMounted` de respaldo). Servidor por defecto:
+  `https://romero-jeweler-production.up.railway.app` (`SERVIDOR_POR_DEFECTO`); los ajustes `proxy_url` y `widget_key` son opcionales.
 - Ubicaciones: `lcard-1` (botón que abre una ventana flotante con el generador), `advanced_settings`
   (editor del diseño dentro de `div#work-area-*`, mismo contenedor que el Bot de Distribución) y `settings`.
 - La interfaz son los componentes de Svelte de `src/lib/invoice/` (`Generador.svelte`, `Disenador.svelte`,
