@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ARCHIVOS_LEAD, CLAUSULAS, CORTES, LEAD, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, draft as d, money, nuevaPiedra, nuevoDeposito, numeroFactura, pendientes, textoClausula, totales, type Deposito, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
+	import { plantilla } from "./plantilla.svelte";
 	import Thumb from "./Thumb.svelte";
 
 	let activa: Seccion | null = $state(null);
@@ -570,10 +571,15 @@
 			<div class="relative min-h-0 flex-1 overflow-y-auto bg-[#e6e8ee] px-4 py-6 sm:px-8 {vista === 'preview' ? '' : 'hidden lg:block'}">
 				<p class="mx-auto mb-3 flex max-w-[560px] items-center justify-between text-xs text-slate-500">
 					<span class="font-semibold tracking-wide uppercase">Vista previa</span>
-					<span>Toca un bloque para editarlo</span>
+					<span class="flex items-center gap-3">
+						<span class="hidden sm:inline">Toca un bloque para editarlo</span>
+						<a href="/kommo/diseno" class="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 font-semibold text-rj-navy shadow-xs ring-1 ring-slate-300 hover:ring-slate-400 focus-visible:outline-2 focus-visible:outline-rj-navy">
+							<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>Editar diseño
+						</a>
+					</span>
 				</p>
 				<div class="transition-opacity {generando ? 'opacity-40' : ''}">
-					<InvoicePreview {d} {activa} {subidas} onpick={ir} />
+					<InvoicePreview {d} p={plantilla} {activa} {subidas} onpick={ir} />
 				</div>
 			</div>
 		</div>

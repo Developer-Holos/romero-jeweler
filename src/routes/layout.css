@@ -8,3 +8,13 @@
 	--color-rj-gold-soft: #f5eee2;
 	--color-km-canvas: #eef1f5;
 }
+
+/* Colores y fuentes del PDF del invoice; los define la plantilla (kommo/plantilla.svelte.ts). */
+@theme inline {
+	--color-pdf-primario: var(--pdf-primario);
+	--color-pdf-acento: var(--pdf-acento);
+	--color-pdf-suave: var(--pdf-suave);
+	--color-pdf-texto: var(--pdf-texto);
+	--font-pdf-titulos: var(--pdf-fuente-titulos);
+	--font-pdf-texto: var(--pdf-fuente-texto);
+}
