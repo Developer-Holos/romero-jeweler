@@ -13,7 +13,8 @@ define(['jquery'], function ($) {
     //   vite.widget.config.ts en el repo romero-jeweler), montada dentro de un
     //   Shadow DOM para que su CSS y el de Kommo no se mezclen.
     // - El PDF, la IA y la plantilla compartida los resuelve el servidor del
-    //   widget (carpeta server/ del repo), con la URL y la clave de los ajustes.
+    //   widget (carpeta server/ del repo), con la URL de los ajustes (y la clave,
+    //   solo si el servidor tiene WIDGET_KEY).
 
     var ROOT_ID = 'rj-invoice-root';
 
@@ -141,7 +142,7 @@ define(['jquery'], function ($) {
 
     this.abrir = function () {
       var servidor = self.servidor();
-      if (!servidor.url || !servidor.clave) {
+      if (!servidor.url) {
         self.status(self.t('error_settings'), 'error');
         return;
       }
@@ -251,7 +252,7 @@ define(['jquery'], function ($) {
       if ($container.data('rj-invoice-montado')) return;
       $container.data('rj-invoice-montado', true);
       var servidor = self.servidor();
-      if (!servidor.url || !servidor.clave) {
+      if (!servidor.url) {
         $container.html('<div class="rj-invoice rj-invoice--aviso">' + self.esc(self.t('error_settings')) + '</div>');
         return;
       }

@@ -109,7 +109,7 @@ El widget es solo la interfaz; el trabajo pesado lo hace un **servidor aparte** 
   en el campo **Invoice** del lead y se descarga.
 - **Ajustes avanzados** (`advanced_settings`): el editor del diseño (bloques, colores, tipografía, logo, pie) y la
   pestaña **Textos** con los textos legales y valores por defecto. Es el mismo para todos los asesores.
-- **Ajustes** (`settings`): *URL del servidor* y *Clave del widget*.
+- **Ajustes** (`settings`): *URL del servidor* y, si el servidor la pide, *Clave del widget*.
 
 El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`, compilados en
 `widget/app.js` (`vite.widget.config.ts`) y montados dentro de un Shadow DOM para que su CSS y el de Kommo no
@@ -138,10 +138,11 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `GET/POST /leads/:lead/imagenes`, `GET /imagenes/:uuid` | Imágenes de referencia, como archivos del lead en Kommo |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
 
-Todo menos `/salud` y `/admin` pide el header `X-Widget-Key`, y solo responde a los orígenes de `ORIGENES`.
+Basta con la URL del servidor. Si se define `WIDGET_KEY`, todo menos `/salud` y `/admin` pide además el header
+`X-Widget-Key`. Los navegadores solo pueden llamarlo desde los orígenes de `ORIGENES`.
 
 ```sh
-cp server/.env.example server/.env   # completar WIDGET_KEY, ADMIN_KEY, OPENAI_API_KEY y Kommo
+cp server/.env.example server/.env   # completar ADMIN_KEY, OPENAI_API_KEY y Kommo (WIDGET_KEY es opcional)
 pnpm install                         # instala también Chromium para el servidor
 pnpm --filter jeweler-servidor dev   # http://localhost:8787 (sin DATABASE_URL usa PGlite en server/data)
 pnpm --filter jeweler-servidor test

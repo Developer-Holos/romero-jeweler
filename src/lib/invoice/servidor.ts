@@ -30,14 +30,14 @@ async function pedir(ruta: string, init: RequestInit = {}) {
 	try {
 		res = await fetch(servidor.url + ruta, {
 			...init,
-			headers: { "X-Widget-Key": servidor.clave, ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...init.headers },
+			headers: { ...(servidor.clave ? { "X-Widget-Key": servidor.clave } : {}), ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...init.headers },
 		});
 	} catch {
 		throw new ErrorServidor("No hay conexión con el servidor del widget", 0);
 	}
 	if (!res.ok) {
 		const { error } = await res.json().catch(() => ({ error: "" }));
-		throw new ErrorServidor(error || (res.status === 401 ? "La clave del widget no es válida" : `El servidor respondió ${res.status}`), res.status);
+		throw new ErrorServidor(error || (res.status === 401 ? "La clave del widget no es válida (ajustes del widget)" : `El servidor respondió ${res.status}`), res.status);
 	}
 	return res;
 }

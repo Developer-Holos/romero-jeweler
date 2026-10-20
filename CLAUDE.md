@@ -86,7 +86,8 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
   rutas con `\`, que Kommo no espera.
 - **Tour**: si cambia un texto de la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta en
   `widget/_tour_src/en.mjs` para las capturas en inglés.
-- El servidor exige `WIDGET_KEY` y solo responde a los orígenes de `ORIGENES` (agregar el dominio de Kommo).
+- `WIDGET_KEY` es opcional: sin ella el servidor acepta cualquier pedido que llegue a su URL; con ella exige el
+  header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
   `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget.
 - **API de Kommo Drive y campo archivo** (`server/src/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
   el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
@@ -100,6 +101,6 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
 reales, con `APP`, `render_template`, `work-area-*` y un lead con campos de producto. Sirve de tres formas:
 
 - **Solo el widget**: `/lead` y `/ajustes` usan un servidor del widget falso en `/srv` (lo usa el tour).
-- **De punta a punta**: `/lead?servidor=http://localhost:8787&clave=<WIDGET_KEY>` usa el servidor real.
+- **De punta a punta**: `/lead?servidor=http://localhost:8787` usa el servidor real (más `&clave=…` si tiene `WIDGET_KEY`).
 - **Kommo para el servidor real**: con `KOMMO_BASE_URL=http://localhost:4180` en `server/.env`, el servidor sube el
   PDF y las imágenes a su Drive en memoria. `GET /kommo/estado` muestra qué llegó.

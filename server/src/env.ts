@@ -1,20 +1,15 @@
 // Variables de entorno del servidor del widget. Se cargan desde server/.env (ver .env.example).
 import { resolve } from "node:path";
 
-function requerida(nombre: string) {
-	const valor = process.env[nombre]?.trim();
-	if (!valor) throw new Error(`Falta la variable de entorno ${nombre} (ver server/.env.example)`);
-	return valor;
-}
-
 const opcional = (nombre: string) => process.env[nombre]?.trim() || undefined;
 
 const subdominio = opcional("KOMMO_SUBDOMAIN");
 
 export const env = {
 	PORT: Number(process.env.PORT) || 8787,
-	// Clave compartida con el widget (ajuste "Clave del widget" en Kommo): viaja en el header X-Widget-Key.
-	WIDGET_KEY: requerida("WIDGET_KEY"),
+	// Opcional. Si está definida, el widget tiene que mandarla en el header X-Widget-Key (ajuste "Clave del
+	// widget" en Kommo). Sin ella, cualquiera que tenga la URL del servidor puede usarlo.
+	WIDGET_KEY: opcional("WIDGET_KEY"),
 	// Clave aparte, solo para Holos: cambiar el modelo de IA sin redesplegar (/admin/ia).
 	ADMIN_KEY: opcional("ADMIN_KEY"),
 	// Orígenes que pueden llamar al servidor (la cuenta de Kommo y el widget en desarrollo).

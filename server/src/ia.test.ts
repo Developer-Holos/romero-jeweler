@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-process.env.WIDGET_KEY ??= "test";
 const { mismasCifras, mismosMeses, validar } = await import("./ia.ts");
 
 const pedido = {

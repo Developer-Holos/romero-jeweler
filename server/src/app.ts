@@ -1,5 +1,5 @@
-// API que usa el widget de invoice de Kommo. Todo, menos /salud y /admin, pide la clave del widget
-// en el header X-Widget-Key (igual que los otros widgets de Kommo con proxy).
+// API que usa el widget de invoice de Kommo. Si WIDGET_KEY está definida, todo menos /salud y /admin pide
+// esa clave en el header X-Widget-Key; si no, basta con la URL del servidor.
 import { timingSafeEqual } from "node:crypto";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -61,7 +61,7 @@ export function crearApp(db: Db) {
 
 	// ─── Widget ───────────────────────────────────────────────────────────────
 	app.use("*", async (c, next) => {
-		if (!iguales(c.req.header("X-Widget-Key"), env.WIDGET_KEY)) return c.json({ error: "Clave del widget inválida" }, 401);
+		if (env.WIDGET_KEY && !iguales(c.req.header("X-Widget-Key"), env.WIDGET_KEY)) return c.json({ error: "Clave del widget inválida" }, 401);
 		await next();
 	});
 

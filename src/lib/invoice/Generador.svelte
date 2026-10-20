@@ -727,7 +727,7 @@
 				{:else if errorGenerar}
 					<p class="text-red-700"><span class="font-semibold">No se generó el invoice.</span> {errorGenerar}</p>
 				{:else if !hayServidor()}
-					<p class="text-amber-700">Falta configurar la URL del servidor y la clave en los ajustes del widget.</p>
+					<p class="text-amber-700">Falta configurar la URL del servidor en los ajustes del widget.</p>
 				{:else if listo && pdf}
 					<p class="flex flex-wrap items-center gap-x-2 text-emerald-700">
 						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>

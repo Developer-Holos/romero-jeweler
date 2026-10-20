@@ -14,7 +14,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
 | 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
 | 4 | Railway, cuenta de Holos | Externo | Crear el servicio con el `Dockerfile` |
-| 5 | Clave fija, sin límite de uso | Hecho | — |
+| 5 | Clave opcional (basta la URL), sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
 | 8 | Imágenes en Kommo | Hecho | API verificada con la cuenta real; adjuntos de chats sin resolver |
@@ -88,7 +88,7 @@ WASM) en `server/data/`, para desarrollar y para los tests.
 **Falta (Holos):**
 1. Crear el servicio en Railway desde este repo, con *Config file path* `server/railway.json`.
 2. Agregar Postgres al proyecto.
-3. Variables: `WIDGET_KEY`, `ADMIN_KEY`, `OPENAI_API_KEY`, `KOMMO_SUBDOMAIN`, `KOMMO_ACCESS_TOKEN`,
+3. Variables: `ADMIN_KEY`, `OPENAI_API_KEY`, `KOMMO_SUBDOMAIN`, `KOMMO_ACCESS_TOKEN`,
    `KOMMO_CAMPO_INVOICE` y `ORIGENES` con `https://romerojeweler.kommo.com` (ver `server/.env.example`).
 4. Revisar que la versión de la imagen del `Dockerfile` coincida con la de `playwright` del lockfile.
 
@@ -96,9 +96,17 @@ El `Dockerfile` no se pudo probar en local (no hay Docker en el equipo de desarr
 
 ## 5. Seguridad de la clave del widget
 
-**Decisión:** solo clave fija (`X-Widget-Key`), sin límite de uso. Igual que los otros widgets de Holos.
+**Decisión (actualizada el 2026-10-20):** la clave es **opcional**. Basta con que el widget mande las solicitudes a
+la URL del servidor. Sin límite de uso.
 
-**Hecho.** Aparte, para cambiar el modelo de IA hay una segunda clave (`ADMIN_KEY`) que no viaja al navegador.
+**Hecho:** sin `WIDGET_KEY` el servidor no pide clave; si se define, exige el header `X-Widget-Key` (y el widget la
+manda si está en sus ajustes). Para cambiar el modelo de IA hay una clave aparte (`ADMIN_KEY`) que no viaja al
+navegador.
+
+**Riesgo a tener presente:** sin clave, cualquiera que conozca la URL puede usar el servidor desde fuera del
+navegador (`ORIGENES` solo frena a los navegadores): generar PDF, gastar IA, cambiar la plantilla y, con el token de
+Kommo del servidor, subir archivos a leads de la cuenta. Si eso preocupa, basta con definir `WIDGET_KEY` en Railway
+y ponerla en los ajustes del widget; no hace falta tocar código.
 
 ## 6. OpenAI: cuenta, modelo y costo
 
@@ -206,6 +214,6 @@ Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rub
 
 **Falta (Holos):**
 1. `pnpm widget:zip` y subir `widget/invoice-romero-jeweler.zip` en Ajustes → Integraciones → Crear integración.
-2. En los ajustes del widget: URL del servidor de Railway y la `WIDGET_KEY`.
+2. En los ajustes del widget: URL del servidor de Railway (y la clave, solo si se definió `WIDGET_KEY`).
 3. Probar con un lead real: precarga del lead (#12), imágenes (#8), generar (número, PDF en el campo Invoice, #1 y
    #3), un invoice en inglés (#7) y el diseñador con los textos de Romero (#10).
