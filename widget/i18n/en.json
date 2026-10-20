@@ -2,7 +2,8 @@
   "widget": {
     "name": "Romero Jeweler Invoice",
     "short_description": "Generate the PDF invoice from the lead card, with the jeweler's design.",
-    "description": "Adds a \"Generate invoice\" button to the lead card that opens a window with the invoice form (client, piece, price and deposits, delivery, images and terms) and its live preview. When generated, AI polishes the description (or translates it to English) and the PDF is downloaded. The invoice design (block order, colors, fonts, logo and footer) is edited in the widget's advanced settings and is shared by every sales rep."
+    "description": "Adds a \"Generate invoice\" button to the lead card that opens a window with the invoice form (client, piece, price and deposits, delivery, images and terms) and its live preview. When generated, AI polishes the description (or translates it to English) and the PDF is downloaded. The invoice design (block order, colors, fonts, logo and footer) is edited in the widget's advanced settings and is shared by every sales rep.",
+    "tour_description": "Generate the PDF invoice from the lead card, with the jeweler's design.\n\n1. In the widget settings, enter the server URL and the widget key.\n2. Open a lead and click 'Generate invoice' in the widget panel: contact, email and budget are already filled in.\n3. Fill in the piece (metal, stones, size) and the deposits; the preview updates instantly.\n4. Click 'Generate invoice': AI polishes the description and the PDF downloads.\n5. To change colors, block order or logo, go to the widget's Advanced settings. The design is shared by the whole team.\n\nNeed help? Write to soporte@holos.ec"
   },
   "settings": {
     "proxy_url": "Server URL",

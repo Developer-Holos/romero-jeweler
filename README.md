@@ -112,8 +112,13 @@ El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`
 se mezclen. `script.js` descarga `app.js` recién al primer uso.
 
 ```sh
-pnpm widget:zip   # compila app.js y arma widget/invoice-romero-jeweler.zip (manifest.json en la raíz)
+pnpm widget:zip    # compila app.js y arma widget/invoice-romero-jeweler.zip (manifest.json en la raíz)
+pnpm widget:tour   # vuelve a generar las imágenes del tour (images/slideshow_*.jpg) con capturas reales
 ```
+
+Las imágenes del tour salen de `widget/_tour_src/`: un Kommo simulado carga el widget real, se toman capturas
+(en inglés la interfaz se traduce con `en.mjs`) y se arman las diapositivas de 1188×616. Si cambia un texto de
+la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 
 En Kommo: **Ajustes → Integraciones → Crear integración → Subir widget**, con ese zip. Después completar la
 URL del servidor (sin barra final) y la misma `WIDGET_KEY` del servidor.

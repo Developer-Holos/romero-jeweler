@@ -2,7 +2,8 @@
   "widget": {
     "name": "Invoice Romero Jeweler",
     "short_description": "Genera el invoice en PDF desde la tarjeta del lead, con el diseño de la joyería.",
-    "description": "Agrega a la tarjeta del lead un botón \"Generar invoice\" que abre una ventana con el formulario del invoice (cliente, pieza, precio y depósitos, entrega, imágenes y condiciones) y su vista previa. Al generarlo, la IA pule la descripción (o la traduce al inglés) y el PDF se descarga. El diseño del invoice (orden de los bloques, colores, tipografía, logo y pie) se edita en los ajustes avanzados del widget y es el mismo para todos los asesores."
+    "description": "Agrega a la tarjeta del lead un botón \"Generar invoice\" que abre una ventana con el formulario del invoice (cliente, pieza, precio y depósitos, entrega, imágenes y condiciones) y su vista previa. Al generarlo, la IA pule la descripción (o la traduce al inglés) y el PDF se descarga. El diseño del invoice (orden de los bloques, colores, tipografía, logo y pie) se edita en los ajustes avanzados del widget y es el mismo para todos los asesores.",
+    "tour_description": "Genera el invoice en PDF desde la tarjeta del lead, con el diseño de la joyería.\n\n1. En Ajustes del widget pon la URL del servidor y la clave del widget.\n2. Abre un lead y pulsa 'Generar invoice' en el panel del widget: el contacto, el correo y el presupuesto ya vienen cargados.\n3. Llena la pieza (metal, piedras, talla) y los depósitos; la vista previa se actualiza al instante.\n4. Pulsa 'Generar invoice': la IA pule la descripción y el PDF se descarga.\n5. Para cambiar colores, orden de los bloques o logo, ve a Ajustes avanzados del widget. El diseño es el mismo para todo el equipo.\n\n¿Necesitas ayuda? Escríbenos a soporte@holos.ec"
   },
   "settings": {
     "proxy_url": "URL del servidor",

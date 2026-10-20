@@ -21,6 +21,26 @@
     "settings",
     "advanced_settings"
   ],
+  "tour": {
+    "is_tour": true,
+    "tour_images": {
+      "es": [
+        "/images/slideshow_1_es.jpg",
+        "/images/slideshow_2_es.jpg",
+        "/images/slideshow_3_es.jpg",
+        "/images/slideshow_4_es.jpg",
+        "/images/slideshow_5_es.jpg"
+      ],
+      "en": [
+        "/images/slideshow_1_en.jpg",
+        "/images/slideshow_2_en.jpg",
+        "/images/slideshow_3_en.jpg",
+        "/images/slideshow_4_en.jpg",
+        "/images/slideshow_5_en.jpg"
+      ]
+    },
+    "tour_description": "widget.tour_description"
+  },
   "settings": {
     "proxy_url": {
       "name": "settings.proxy_url",

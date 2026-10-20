@@ -25,3 +25,5 @@ vite.config.ts.timestamp-*
 # Widget de Kommo: se compilan con pnpm widget:zip
 /widget/app.js
 /widget/*.zip
+/widget/_tour_src/capturas/
+/widget/_tour_src/html/
