@@ -1,0 +1,87 @@
+/**
+ * Invoice Romero Jeweler — panel de la tarjeta del lead y avisos de ajustes avanzados.
+ * El generador y el diseñador traen sus propios estilos dentro de un Shadow DOM (app.js).
+ * Colores de la marca: #1c2150 (azul), #b08d57 (dorado).
+ */
+
+.rj-invoice {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #333;
+}
+
+.rj-invoice *,
+.rj-invoice *::before,
+.rj-invoice *::after {
+  box-sizing: border-box;
+}
+
+.rj-invoice__hint {
+  margin: 0 0 10px;
+  color: #777;
+}
+
+.rj-invoice__btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #1c2150;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.rj-invoice__btn::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  background: #b08d57;
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+
+.rj-invoice__btn:hover {
+  background: #262c66;
+}
+
+.rj-invoice__btn:focus-visible {
+  outline: 2px solid #b08d57;
+  outline-offset: 2px;
+}
+
+.rj-invoice__btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.rj-invoice__status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.rj-invoice__status:empty {
+  display: none;
+}
+
+.rj-invoice__status--working {
+  color: #1c2150;
+}
+
+.rj-invoice__status--error {
+  color: #c62828;
+}
+
+.rj-invoice--aviso {
+  padding: 16px 18px;
+  border: 1px solid rgba(28, 33, 80, 0.12);
+  border-radius: 8px;
+  background: #fff;
+}

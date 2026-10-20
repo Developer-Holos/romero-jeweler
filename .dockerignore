@@ -1,0 +1,13 @@
+**/node_modules
+.svelte-kit
+build
+.claude
+graphify-out
+references
+widget
+src
+static
+server/data
+server/.env
+.env
+.env.*

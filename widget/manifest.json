@@ -1,0 +1,59 @@
+{
+  "widget": {
+    "name": "widget.name",
+    "description": "widget.description",
+    "short_description": "widget.short_description",
+    "version": "1.0.0",
+    "interface_version": 2,
+    "init_once": false,
+    "locale": [
+      "es",
+      "en"
+    ],
+    "installation": true,
+    "company": "Holos",
+    "privacy_policy": "https://www.holos.ec/holos-privacy.html",
+    "support_url": "https://www.holos.ec/holos-support.html",
+    "support_email": "soporte@holos.ec"
+  },
+  "locations": [
+    "lcard-1",
+    "settings",
+    "advanced_settings"
+  ],
+  "tour": {
+    "is_tour": true,
+    "tour_images": {
+      "es": [
+        "/images/slideshow_1_es.jpg",
+        "/images/slideshow_2_es.jpg",
+        "/images/slideshow_3_es.jpg",
+        "/images/slideshow_4_es.jpg",
+        "/images/slideshow_5_es.jpg"
+      ],
+      "en": [
+        "/images/slideshow_1_en.jpg",
+        "/images/slideshow_2_en.jpg",
+        "/images/slideshow_3_en.jpg",
+        "/images/slideshow_4_en.jpg",
+        "/images/slideshow_5_en.jpg"
+      ]
+    },
+    "tour_description": "widget.tour_description"
+  },
+  "settings": {
+    "proxy_url": {
+      "name": "settings.proxy_url",
+      "type": "text",
+      "required": true
+    },
+    "widget_key": {
+      "name": "settings.widget_key",
+      "type": "pass",
+      "required": true
+    }
+  },
+  "advanced": {
+    "title": "advanced.title"
+  }
+}

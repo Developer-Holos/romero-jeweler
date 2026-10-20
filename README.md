@@ -1,5 +1,7 @@
 # Jeweler — Tracking de pedidos conectado a Kommo
 
+> Guía para trabajar en el repo: [`CLAUDE.md`](CLAUDE.md). Decisiones y pendientes: [`docs/DECISIONES.md`](docs/DECISIONES.md).
+
 Página pública de seguimiento para los clientes de la joyería. El cliente recibe un enlace
 (`/orders/<lead_id>`) y ve en qué etapa de producción está su pedido. La etapa es un reflejo
 directo de la etapa en la que está su lead dentro del CRM **Kommo**.
@@ -94,7 +96,75 @@ contactos Posición, Teléfono y Email. No hay campos de producto ni de metal.
 Probado de punta a punta con un lead real: avance, vuelta atrás, entrega, ganado, cancelado, lead en
 Ventas (404), ids inválidos (404) y token inválido (502 + log).
 
+## Widget de invoice de Kommo (`widget/`) y su servidor (`server/`)
+
+El widget es solo la interfaz; el trabajo pesado lo hace un **servidor aparte** que el widget llama por URL.
+
+**En Kommo** (`widget/`, mismo formato que los demás widgets de Holos: AMD + jQuery, `i18n`, logos, tour):
+
+- **Tarjeta del lead** (`lcard-1`): botón **Generar invoice** que abre una ventana flotante con el formulario y la
+  vista previa. Llega precargado con el contacto principal, su correo, el responsable, el precio del lead (solo
+  lectura) y los campos de producto (Metal, Quilates, Piedra, Talla). El borrador se guarda en el servidor, por
+  lead. Al generar, el invoice recibe su número, la IA pule el texto (o traduce todo al inglés) y el PDF se guarda
+  en el campo **Invoice** del lead y se descarga.
+- **Ajustes avanzados** (`advanced_settings`): el editor del diseño (bloques, colores, tipografía, logo, pie) y la
+  pestaña **Textos** con los textos legales y valores por defecto. Es el mismo para todos los asesores.
+- **Ajustes** (`settings`): *URL del servidor* y *Clave del widget*.
+
+El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`, compilados en
+`widget/app.js` (`vite.widget.config.ts`) y montados dentro de un Shadow DOM para que su CSS y el de Kommo no
+se mezclen. `script.js` descarga `app.js` recién al primer uso.
+
+```sh
+pnpm widget:zip    # compila app.js y arma widget/invoice-romero-jeweler.zip (manifest.json en la raíz)
+pnpm widget:tour   # vuelve a generar las imágenes del tour (images/slideshow_*.jpg) con capturas reales
+```
+
+Las imágenes del tour salen de `widget/_tour_src/`: un Kommo simulado carga el widget real, se toman capturas
+(en inglés la interfaz se traduce con `en.mjs`) y se arman las diapositivas de 1188×616. Si cambia un texto de
+la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
+
+**El servidor** (`server/`, Node + Hono + Postgres), publicado en Railway con `server/Dockerfile`:
+
+| Ruta | Qué hace |
+| --- | --- |
+| `GET /salud` | Estado: IA y Kommo configurados (sin clave) |
+| `GET/PUT /plantilla` | Diseño y textos compartidos por todos los asesores |
+| `GET/PUT /borradores/:lead` | Borrador del invoice de cada lead |
+| `POST /ia/redactar` | OpenAI pule la descripción y, en inglés, traduce todo. Si cambia una cifra o un mes, ese texto queda en el original |
+| `POST /invoices/numero` | Asigna el correlativo `RJ-AAAA-NNNN` |
+| `POST /invoices/:numero/pdf` | HTML de la vista previa → PDF carta (Chromium); lo registra y lo guarda en el campo Invoice del lead |
+| `POST /pdf` | PDF de una cotización (sin número, no va a Kommo) |
+| `GET/POST /leads/:lead/imagenes`, `GET /imagenes/:uuid` | Imágenes de referencia, como archivos del lead en Kommo |
+| `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
+
+Todo menos `/salud` y `/admin` pide el header `X-Widget-Key`, y solo responde a los orígenes de `ORIGENES`.
+
+```sh
+cp server/.env.example server/.env   # completar WIDGET_KEY, ADMIN_KEY, OPENAI_API_KEY y Kommo
+pnpm install                         # instala también Chromium para el servidor
+pnpm --filter jeweler-servidor dev   # http://localhost:8787 (sin DATABASE_URL usa PGlite en server/data)
+pnpm --filter jeweler-servidor test
+```
+
+**Campos de los leads en Kommo (cuenta `romerojeweler`):**
+
+| Campo | Tipo | Id | Lo usa |
+| --- | --- | --- | --- |
+| Invoice | Archivo | 133486 | El servidor guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
+| Metal | Lista | 133508 | El widget lo precarga (`CAMPOS_PRODUCTO` en `widget/script.js`) |
+| Quilates | Lista | 133510 | Ídem |
+| Piedra | Lista | 133562 | Ídem |
+| Talla | Texto | 133564 | Ídem |
+
+Los campos de producto se buscan por id y, si no aparecen, por nombre.
+
 ## Pendientes
+
+Las decisiones del widget de invoice, con lo que ya está hecho y lo que falta verificar, están en
+[`docs/DECISIONES.md`](docs/DECISIONES.md); los textos que Romero debe confirmar, en
+[`docs/TEXTOS_PARA_ROMERO.md`](docs/TEXTOS_PARA_ROMERO.md). Lo que sigue es del tracking de pedidos.
+
 
 1. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede
    ver la etapa de pedidos ajenos (la página ya no muestra el nombre del lead). Conviene un token por pedido.
