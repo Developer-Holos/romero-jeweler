@@ -82,7 +82,7 @@ WASM) en `server/data/`, para desarrollar y para los tests.
 
 **Decisión:** Railway, en la cuenta de Holos.
 
-**Publicado** en `https://romero-jeweler-production.up.railway.app` (el widget lo usa por defecto).
+**Publicado** en `https://romero-jeweler-production.up.railway.app`, que está fijo en el widget (`SERVIDOR_URL` en `widget/script.js`).
 
 **Hecho:** `server/Dockerfile` (imagen oficial de Playwright, con Chromium) y `server/railway.json` (healthcheck en
 `/salud`). Se construye desde la raíz del repo.
@@ -216,7 +216,7 @@ Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rub
 
 **Falta (Holos):**
 1. `pnpm widget:zip` y subir `widget/invoice-romero-jeweler.zip` en Ajustes → Integraciones → Crear integración.
-2. Nada más que configurar: el widget ya apunta al servidor de Railway (`https://romero-jeweler-production.up.railway.app`). Los ajustes solo hacen
-   falta para usar otro servidor o si se definió `WIDGET_KEY`.
+2. Nada más que configurar: el widget ya apunta al servidor de Railway (`https://romero-jeweler-production.up.railway.app`). La clave de los
+   ajustes solo hace falta si se definió `WIDGET_KEY`.
 3. Probar con un lead real: precarga del lead (#12), imágenes (#8), generar (número, PDF en el campo Invoice, #1 y
    #3), un invoice en inglés (#7) y el diseñador con los textos de Romero (#10).

@@ -109,8 +109,8 @@ El widget es solo la interfaz; el trabajo pesado lo hace un **servidor aparte** 
   en el campo **Invoice** del lead y se descarga.
 - **Ajustes avanzados** (`advanced_settings`): el editor del diseño (bloques, colores, tipografía, logo, pie) y la
   pestaña **Textos** con los textos legales y valores por defecto. Es el mismo para todos los asesores.
-- **Ajustes** (`settings`): opcionales. Sin *URL del servidor* el widget usa el de Railway
-  (`https://romero-jeweler-production.up.railway.app`, `SERVIDOR_POR_DEFECTO` en `widget/script.js`); *Clave del widget* solo si el servidor la pide.
+- **Servidor:** fijo en el widget, `https://romero-jeweler-production.up.railway.app` (`SERVIDOR_URL` en `widget/script.js`). El único ajuste,
+  *Clave del widget*, es opcional y solo hace falta si el servidor tiene `WIDGET_KEY`.
 
 El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`, compilados en
 `widget/app.js` (`vite.widget.config.ts`) y montados dentro de un Shadow DOM para que su CSS y el de Kommo no

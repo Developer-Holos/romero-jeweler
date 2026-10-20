@@ -42,11 +42,6 @@
     "tour_description": "widget.tour_description"
   },
   "settings": {
-    "proxy_url": {
-      "name": "settings.proxy_url",
-      "type": "text",
-      "required": false
-    },
     "widget_key": {
       "name": "settings.widget_key",
       "type": "pass",

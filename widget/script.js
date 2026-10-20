@@ -13,13 +13,13 @@ define(['jquery'], function ($) {
     //   vite.widget.config.ts en el repo romero-jeweler), montada dentro de un
     //   Shadow DOM para que su CSS y el de Kommo no se mezclen.
     // - El PDF, la IA y la plantilla compartida los resuelve el servidor del
-    //   widget (carpeta server/ del repo), con la URL de los ajustes (y la clave,
-    //   solo si el servidor tiene WIDGET_KEY).
+    //   widget (carpeta server/ del repo), publicado en SERVIDOR_URL (la clave de
+    //   los ajustes solo hace falta si el servidor tiene WIDGET_KEY).
 
     var ROOT_ID = 'rj-invoice-root';
 
-    // Servidor del widget publicado en Railway. El ajuste "URL del servidor" solo hace falta para usar otro.
-    var SERVIDOR_POR_DEFECTO = 'https://romero-jeweler-production.up.railway.app';
+    // Servidor del widget publicado en Railway.
+    var SERVIDOR_URL = 'https://romero-jeweler-production.up.railway.app';
 
     // Campos de producto de los leads en la cuenta romerojeweler (Ajustes → Campos).
     // Si un id no aparece en el lead (otra cuenta, campo recreado), se busca por nombre.
@@ -97,7 +97,7 @@ define(['jquery'], function ($) {
 
     this.servidor = function () {
       var settings = self.get_settings() || {};
-      return { url: (settings.proxy_url || '').trim() || SERVIDOR_POR_DEFECTO, clave: settings.widget_key || '' };
+      return { url: SERVIDOR_URL, clave: settings.widget_key || '' };
     };
 
     // ─── Tarjeta del lead ─────────────────────────────────────────────────────

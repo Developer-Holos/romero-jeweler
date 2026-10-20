@@ -5,7 +5,10 @@
 //   - Kommo y Kommo Drive para el servidor real, apuntándole KOMMO_BASE_URL (prueba de punta a punta).
 //
 //   node widget/_tour_src/kommo.mjs     → http://localhost:4180/lead  y  /ajustes
-//   …/lead?servidor=http://localhost:8787&clave=<WIDGET_KEY>   → usa el servidor real en vez de /srv
+//   …/lead?servidor=http://localhost:8787   → usa el servidor real en vez de /srv (más &clave=… si tiene WIDGET_KEY)
+//
+// El widget trae fija la URL del servidor de Railway (SERVIDOR_URL en script.js): al servir script.js se cambia
+// por la de esta prueba, para no tocar el servidor de producción.
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -42,11 +45,11 @@ function pagina(lang, titulo, cuerpo, arranque) {
 	var q = new URLSearchParams(location.search);
 	window.define = function (deps, factory) {
 		var Widget = factory(jQuery), w = new Widget();
-		w.get_settings = function () { return { path: "/widget", version: "tour", widget_code: "rjinvoice", proxy_url: q.get("servidor") || location.origin + "/srv", widget_key: q.get("clave") || "tour" }; };
+		w.get_settings = function () { return { path: "/widget", version: "tour", widget_code: "rjinvoice", widget_key: q.get("clave") || "" }; };
 		w.render_template = function (o) { jQuery("#widget_rjinvoice .widget_body").html(o.render || o.body || ""); };
 		jQuery.getJSON("/widget/i18n/${lang}.json", function (d) { w.i18n = function (k) { return d[k]; }; w.callbacks.init(); ${arranque} window.listo = true; });
 	};
-</script><script src="/widget/script.js"></script></body></html>`;
+</script><script>document.write('<script src="/widget/script.js?servidor=' + encodeURIComponent(q.get("servidor") || location.origin + "/srv") + '"><\\/script>');</script></body></html>`;
 }
 
 const leer = async (req) => {
@@ -157,7 +160,8 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 			const archivo = normalize(join(dirWidget, ruta.slice("/widget/".length)));
 			if (archivo.startsWith(normalize(dirWidget))) {
 				try {
-					const datos = await readFile(archivo);
+					let datos = await readFile(archivo);
+					if (ruta === "/widget/script.js") datos = Buffer.from(datos.toString().replace(/var SERVIDOR_URL = '[^']*'/, `var SERVIDOR_URL = '${url.searchParams.get("servidor") ?? `${base}/srv`}'`));
 					res.writeHead(200, { "Content-Type": TIPOS[extname(archivo)] ?? "application/octet-stream" });
 					return res.end(datos);
 				} catch {}
