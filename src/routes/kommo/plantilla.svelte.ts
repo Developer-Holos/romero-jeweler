@@ -1,7 +1,9 @@
 // Diseño del PDF del invoice: orden de los bloques, colores, tipografía y marca.
-// Por ahora se guarda en el navegador (localStorage); se puede exportar e importar como JSON.
+// Se comparte entre asesores a través del servidor del widget; el navegador guarda una copia
+// para abrir al instante y para funcionar sin servidor. También se exporta e importa como JSON.
 
 import type { Seccion } from "./invoice.svelte";
+import { guardarPlantillaServidor, hayServidor, leerPlantillaServidor } from "./servidor";
 
 export type BloqueId = "datos" | "descripcion" | "precios" | "condPago" | "produccion" | "politicas" | "terminos" | "imagenes";
 export type Bloque = { id: BloqueId; visible: boolean; titulo: string };
@@ -88,6 +90,21 @@ function cargar(): Plantilla {
 
 // Las rutas de /kommo no se renderizan en el servidor (+layout.ts), así que aquí siempre hay navegador.
 export const plantilla: Plantilla = $state(cargar());
+
+// Trae la plantilla compartida. Si el servidor aún no tiene ninguna, se queda la local.
+export async function cargarPlantillaServidor() {
+	if (!hayServidor) return;
+	try {
+		const remota = await leerPlantillaServidor();
+		if (remota) Object.assign(plantilla, normalizar(remota));
+	} catch (e) {
+		console.warn("[plantilla] no se pudo leer del servidor:", e);
+	}
+}
+
+export async function subirPlantilla() {
+	await guardarPlantillaServidor($state.snapshot(plantilla));
+}
 
 export function guardarPlantilla() {
 	try {

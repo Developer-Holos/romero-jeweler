@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { draft as d } from "../invoice.svelte";
 	import InvoicePreview, { type Editor } from "../InvoicePreview.svelte";
-	import { BLOQUES, ESPACIADOS, FUENTES, PALETAS, guardarPlantilla, moverBloque, normalizar, plantilla as p, plantillaInicial, type BloqueId, type Fuente } from "../plantilla.svelte";
+	import { onMount, untrack } from "svelte";
+	import { hayServidor } from "../servidor";
+	import { BLOQUES, ESPACIADOS, FUENTES, PALETAS, cargarPlantillaServidor, guardarPlantilla, moverBloque, subirPlantilla, normalizar, plantilla as p, plantillaInicial, type BloqueId, type Fuente } from "../plantilla.svelte";
 
 	type Pestana = "bloques" | "estilo" | "marca";
 	let pestana: Pestana = $state("bloques");
@@ -12,9 +14,20 @@
 	let aviso = $state("");
 
 	// Guardado automático: JSON.stringify lee toda la plantilla, así que cualquier cambio vuelve a guardar.
+	// En el navegador al instante; en el servidor (compartido) un momento después de dejar de editar.
 	let guardado = $state(true);
+	let remoto: "cargando" | "guardando" | "ok" | "error" = $state(hayServidor ? "cargando" : "ok");
+	let espera: ReturnType<typeof setTimeout> | undefined;
 	$effect(() => {
 		guardado = guardarPlantilla();
+		if (untrack(() => remoto) === "cargando") return; // no subir lo local antes de leer lo compartido
+		remoto = "guardando";
+		clearTimeout(espera);
+		espera = setTimeout(() => subirPlantilla().then(() => (remoto = "ok"), () => (remoto = "error")), 800);
+	});
+	onMount(() => {
+		cargarPlantillaServidor().then(() => (remoto = "ok"));
+		return () => clearTimeout(espera);
 	});
 
 	const indice = (id: BloqueId) => p.bloques.findIndex((b) => b.id === id);
@@ -369,11 +382,17 @@
 				<h1 class="text-base leading-tight font-bold text-slate-900">Diseño del invoice</h1>
 				<p class="truncate text-xs text-slate-500">Se aplica a todos los invoices. La vista previa usa el borrador abierto.</p>
 			</div>
-			<p class="hidden items-center gap-1.5 text-xs sm:flex {guardado ? 'text-slate-500' : 'text-red-700'}" aria-live="polite">
-				{#if guardado}
-					<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Guardado en este navegador
-				{:else}
+			<p class="hidden items-center gap-1.5 text-xs sm:flex {!guardado || remoto === 'error' ? 'text-red-700' : 'text-slate-500'}" aria-live="polite">
+				{#if !guardado}
 					No se pudo guardar. Prueba con un logo más liviano.
+				{:else if remoto === "error"}
+					No se pudo guardar en el servidor; queda en este navegador.
+				{:else if remoto === "cargando"}
+					Cargando el diseño compartido…
+				{:else if remoto === "guardando"}
+					Guardando…
+				{:else}
+					<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{hayServidor ? "Guardado para todos los asesores" : "Guardado en este navegador"}
 				{/if}
 			</p>
 			<div class="flex items-center gap-1">

@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { ARCHIVOS_LEAD, CLAUSULAS, CORTES, LEAD, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, draft as d, money, nuevaPiedra, nuevoDeposito, numeroFactura, pendientes, textoClausula, totales, type Deposito, type Seccion } from "./invoice.svelte";
+	import { ARCHIVOS_LEAD, CLAUSULAS, CORTES, tituloPieza, vinetas, LEAD, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, draft as d, money, nuevaPiedra, nuevoDeposito, numeroFactura, pendientes, textoClausula, totales, type Deposito, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
-	import { plantilla } from "./plantilla.svelte";
+	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
+	import { ErrorServidor, generarPdf, hayServidor, htmlDelInvoice, redactar, type Redaccion } from "./servidor";
+	import { onMount, tick } from "svelte";
 	import Thumb from "./Thumb.svelte";
 
 	let activa: Seccion | null = $state(null);
@@ -20,7 +22,17 @@
 		return [s.id, ps.some((p) => p.bloquea) ? "error" : ps.length ? "aviso" : "ok"];
 	})) as Record<Seccion, "ok" | "aviso" | "error">);
 
-	const PASOS = ["Redactando descripción y condiciones", "Maquetando el PDF", "Guardando en el campo «Invoice PDF» del lead"];
+	const PASOS = ["Redactando descripción y condiciones", "Generando el PDF"];
+
+	let articulo: HTMLElement | undefined = $state();
+	let pdf: { url: string; nombre: string } | null = $state(null);
+	let errorGenerar = $state("");
+	let avisoIa = $state("");
+	// La redacción de la IA vale mientras el borrador no cambie.
+	let redaccion = $state<{ para: string; texto: Redaccion } | null>(null);
+	let redaccionVigente = $derived(redaccion && redaccion.para === JSON.stringify(d) ? redaccion.texto : null);
+
+	onMount(() => void cargarPlantillaServidor());
 
 	let formEl: HTMLElement;
 	function ir(sec: Seccion) {
@@ -35,9 +47,34 @@
 	async function generar() {
 		if (bloqueantes.length) return ir(bloqueantes[0].sec);
 		generando = true;
-		for (paso = 0; paso < PASOS.length; paso++) await new Promise((r) => setTimeout(r, 1300));
-		generando = false;
-		generada = JSON.stringify(d);
+		errorGenerar = avisoIa = "";
+		const firma = JSON.stringify(d);
+		try {
+			paso = 0;
+			if (!redaccionVigente) {
+				try {
+					const activas = CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ id: c.id, nombre: c.nombre, texto: textoClausula(c.id, d) }));
+					const texto = await redactar({ idioma: d.idioma, pieza: tituloPieza(d), vinetas: vinetas(d), notas: d.notas, instrucciones: d.instrucciones, clausulas: activas });
+					redaccion = { para: firma, texto };
+					if (texto.descartadas.length) avisoIa = "La IA cambió alguna cifra, así que en esos bloques se dejó el texto original.";
+				} catch (e) {
+					// Sin IA el invoice sale igual, con el texto armado de los campos.
+					if (!(e instanceof ErrorServidor) || e.status !== 503) throw e;
+					avisoIa = d.idioma === "en" ? "La IA no está configurada: el texto sale en español." : "La IA no está configurada: se usó el texto estándar.";
+				}
+			}
+			paso = 1;
+			await tick(); // que la vista previa ya muestre la redacción antes de copiarla
+			const nombre = `${d.sinCliente ? "RJ-INV-borrador" : numeroFactura(d)}.pdf`;
+			const blob = await generarPdf(await htmlDelInvoice(articulo!), nombre);
+			if (pdf) URL.revokeObjectURL(pdf.url);
+			pdf = { url: URL.createObjectURL(blob), nombre };
+			generada = firma;
+		} catch (e) {
+			errorGenerar = e instanceof Error ? e.message : "No se pudo generar el invoice";
+		} finally {
+			generando = false;
+		}
 	}
 
 	function restablecer() {
@@ -579,7 +616,7 @@
 					</span>
 				</p>
 				<div class="transition-opacity {generando ? 'opacity-40' : ''}">
-					<InvoicePreview {d} p={plantilla} {activa} {subidas} onpick={ir} />
+					<InvoicePreview {d} p={plantilla} {activa} {subidas} onpick={ir} redaccion={redaccionVigente} bind:elemento={articulo} />
 				</div>
 			</div>
 		</div>
@@ -592,11 +629,17 @@
 						<svg class="size-4 motion-safe:animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".2" stroke-width="3" /><path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>
 						{PASOS[Math.min(paso, PASOS.length - 1)]}… <span class="font-normal text-slate-400">({Math.min(paso + 1, PASOS.length)}/{PASOS.length})</span>
 					</p>
-				{:else if listo}
+				{:else if errorGenerar}
+					<p class="text-red-700"><span class="font-semibold">No se generó el invoice.</span> {errorGenerar}</p>
+				{:else if !hayServidor}
+					<p class="text-amber-700">El widget no tiene configurado el servidor (SERVIDOR_URL), así que no puede generar el PDF.</p>
+				{:else if listo && pdf}
 					<p class="flex flex-wrap items-center gap-x-2 text-emerald-700">
 						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-						<span class="font-semibold">Invoice guardado en el lead</span>
-						<a href="#pdf" class="font-medium text-rj-navy underline underline-offset-2">{numeroFactura(d)}.pdf</a>
+						<span class="font-semibold">PDF listo</span>
+						<a href={pdf.url} target="_blank" rel="noopener" class="font-medium text-rj-navy underline underline-offset-2">Abrir</a>
+						<a href={pdf.url} download={pdf.nombre} class="font-medium text-rj-navy underline underline-offset-2">Descargar {pdf.nombre}</a>
+						{#if avisoIa}<span class="basis-full text-xs text-amber-700">{avisoIa}</span>{/if}
 					</p>
 				{:else if bloqueantes.length}
 					<p class="text-red-700">
@@ -613,7 +656,7 @@
 				{/if}
 			</div>
 			<button type="button" onclick={restablecer} disabled={generando} class="ml-auto rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-rj-navy disabled:opacity-50">Restablecer</button>
-			<button type="button" onclick={generar} disabled={generando} aria-disabled={bloqueantes.length > 0} class="inline-flex items-center gap-2 rounded-md bg-rj-navy px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy active:scale-[.98] disabled:cursor-wait disabled:opacity-70 aria-disabled:bg-slate-400">
+			<button type="button" onclick={generar} disabled={generando || !hayServidor} aria-disabled={bloqueantes.length > 0} class="inline-flex items-center gap-2 rounded-md bg-rj-navy px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy active:scale-[.98] disabled:cursor-wait disabled:opacity-70 aria-disabled:bg-slate-400">
 				<svg class="size-4 text-rj-gold" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>
 				{generada && !listo ? "Generar de nuevo" : "Generar invoice"}
 			</button>

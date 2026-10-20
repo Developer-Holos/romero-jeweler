@@ -94,6 +94,31 @@ contactos Posición, Teléfono y Email. No hay campos de producto ni de metal.
 Probado de punta a punta con un lead real: avance, vuelta atrás, entrega, ganado, cancelado, lead en
 Ventas (404), ids inválidos (404) y token inválido (502 + log).
 
+## Widget de invoice (`/kommo`) y su servidor (`server/`)
+
+El widget de Kommo es solo la interfaz: el generador de invoices (`/kommo`) y el editor del diseño del
+PDF (`/kommo/diseno`). El trabajo pesado lo hace un **servidor aparte** (`server/`, Node + Hono) al que
+el widget llama por URL:
+
+| Ruta | Qué hace |
+| --- | --- |
+| `GET /salud` | Estado y si la IA está activa (sin clave) |
+| `GET/PUT /plantilla` | Diseño compartido por todos los asesores (`server/data/plantilla.json`) |
+| `POST /ia/redactar` | OpenAI pule la descripción y traduce al inglés. Si la IA cambia una cifra, ese bloque queda con el texto original |
+| `POST /pdf` | HTML de la vista previa → PDF carta con Chromium (Playwright) |
+
+Todo menos `/salud` pide `Authorization: Bearer <WIDGET_API_KEY>`, y solo responde a los orígenes de `ORIGENES`.
+
+```sh
+cp server/.env.example server/.env   # completar WIDGET_API_KEY y OPENAI_API_KEY
+pnpm install                         # instala también Chromium para el servidor
+pnpm --filter jeweler-servidor dev   # http://localhost:8787
+pnpm --filter jeweler-servidor test
+```
+
+El widget lee `SERVIDOR_URL` y `SERVIDOR_KEY` del `.env` raíz (públicas: la clave llega al navegador). Sin
+`SERVIDOR_URL` el widget funciona igual, pero no genera el PDF y el diseño queda solo en el navegador.
+
 ## Pendientes
 
 1. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede

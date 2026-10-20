@@ -177,6 +177,8 @@ export function totales(d: Borrador) {
 	return { valor, tax, total, depositos, suma, diferencia: r2(total - suma), ahoraDep, ahora, saldo: r2(total - ahora) };
 }
 
+export const tituloPieza = (d: Borrador) => (d.pieza ? `${d.pieza}${d.aMedida && !d.pieza.toLowerCase().includes("medida") ? " a la medida" : ""}` : "Tipo de pieza pendiente");
+
 const PLURALES: Record<string, string> = { Rubí: "Rubíes" };
 
 // Viñetas que se pueden armar sin IA a partir de los campos. La IA las pule y suma las notas.

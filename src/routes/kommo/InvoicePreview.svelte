@@ -13,16 +13,19 @@
 </script>
 
 <script lang="ts">
-	import { ARCHIVOS_LEAD, CLAUSULAS, fechaLarga, money, negritas, numeroFactura, pctTexto, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
+	import { ARCHIVOS_LEAD, CLAUSULAS, fechaLarga, tituloPieza, money, negritas, numeroFactura, pctTexto, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
 	import { BLOQUES, ESPACIADOS, variables, type Bloque, type Plantilla } from "./plantilla.svelte";
+	import type { Redaccion } from "./servidor";
 	import Thumb from "./Thumb.svelte";
 
-	let { d, p, activa = null, onpick, subidas = [], editor }: { d: Borrador; p: Plantilla; activa?: Seccion | null; onpick?: (s: Seccion) => void; subidas?: { id: string; url: string }[]; editor?: Editor } = $props();
+	// `redaccion`: texto que devolvió la IA para este borrador; reemplaza viñetas y cláusulas.
+	// `elemento`: el <article>, para copiarlo como HTML al generar el PDF.
+	let { d, p, activa = null, onpick, subidas = [], editor, redaccion = null, elemento = $bindable() }: { d: Borrador; p: Plantilla; activa?: Seccion | null; onpick?: (s: Seccion) => void; subidas?: { id: string; url: string }[]; editor?: Editor; redaccion?: Redaccion | null; elemento?: HTMLElement } = $props();
 
 	let t = $derived(totales(d));
-	let lineas = $derived(vinetas(d));
+	let lineas = $derived(redaccion?.vinetas ?? vinetas(d));
 	let imagenes = $derived(d.imagenes.map((id) => ({ id, tono: ARCHIVOS_LEAD.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })));
-	let clausulas = $derived(CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ ...c, texto: textoClausula(c.id, d) })));
+	let clausulas = $derived(CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ ...c, texto: textoClausula(c.id, d), ...redaccion?.clausulas.find((r) => r.id === c.id) })));
 	let politicas = $derived(clausulas.filter((c) => !["pago", "produccion", "terminos"].includes(c.id)));
 	let anillo = $derived(d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza");
 	const clausula = (id: string) => clausulas.find((c) => c.id === id);
@@ -37,18 +40,17 @@
 		return activa && secs.includes(activa) ? "outline-rj-gold bg-rj-gold-soft/40" : "outline-transparent hover:outline-slate-200";
 	}
 
-	let raiz: HTMLElement;
 	$effect(() => {
 		const sec = editor ? editor.sel : activa;
 		if (!sec) return;
-		const el = raiz.querySelector<HTMLElement>(editor ? `[data-bloque="${sec}"]` : `[data-sec~="${sec}"]`);
+		const el = elemento?.querySelector<HTMLElement>(editor ? `[data-bloque="${sec}"]` : `[data-sec~="${sec}"]`);
 		const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 		el?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
 	});
 </script>
 
 {#snippet ia(texto: string)}
-	<span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-rj-gold-soft px-1.5 py-px align-middle font-sans text-[8.5px] font-semibold tracking-wide text-[#8a6a3a] uppercase">
+	<span data-no-pdf class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-rj-gold-soft px-1.5 py-px align-middle font-sans text-[8.5px] font-semibold tracking-wide text-[#8a6a3a] uppercase">
 		<svg class="size-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>
 		{texto}
 	</span>
@@ -74,15 +76,15 @@
 			{/each}
 		</dl>
 	{:else if b.id === "descripcion"}
-		{#if b.titulo}<h3 class="mb-2 border-b border-slate-200 pb-1 font-pdf-titulos text-[11.5px] font-bold text-pdf-primario">{titulo(b)} {#if !editor}{@render ia("la IA pule la redacción")}{/if}</h3>{/if}
+		{#if b.titulo}<h3 class="mb-2 border-b border-slate-200 pb-1 font-pdf-titulos text-[11.5px] font-bold text-pdf-primario">{titulo(b)} {#if !editor}{@render ia(redaccion ? "redactado por la IA" : "la IA pule la redacción")}{/if}</h3>{/if}
 		<div class="flex justify-between gap-4 font-bold text-pdf-primario">
-			<span>{d.pieza ? `${d.pieza}${d.aMedida && !d.pieza.toLowerCase().includes("medida") ? " a la medida" : ""}` : "Tipo de pieza pendiente"}</span>
+			<span>{redaccion?.titulo ?? tituloPieza(d)}</span>
 			<span class="tabular-nums">{money(t.valor)}</span>
 		</div>
 		<ul class="mt-1 list-disc space-y-0.5 pl-5 text-[9.5px] opacity-80">
 			{#each lineas as l, i (i)}<li>{l}</li>{/each}
-			{#if d.notas.trim() && !editor}
-				<li class="mt-1.5 -ml-5 list-none rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">De tus notas: «{d.notas.trim()}»</li>
+			{#if d.notas.trim() && !editor && !redaccion}
+				<li data-no-pdf class="mt-1.5 -ml-5 list-none rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">De tus notas: «{d.notas.trim()}»</li>
 			{/if}
 		</ul>
 	{:else if b.id === "precios"}
@@ -150,7 +152,7 @@
 			</div>
 			{#if p.imagenes.nota}<p class="mt-1.5 text-[8.5px] italic opacity-70">Render de referencia del diseño. La pieza final puede presentar ligeras variaciones.</p>{/if}
 		{:else}
-			<p class="rounded border border-dashed border-slate-300 py-4 text-center font-sans text-[9px] text-slate-400">Esta sección no aparecerá si no eliges imágenes.</p>
+			<p data-no-pdf class="rounded border border-dashed border-slate-300 py-4 text-center font-sans text-[9px] text-slate-400">Esta sección no aparecerá si no eliges imágenes.</p>
 		{/if}
 	{/if}
 {/snippet}
@@ -159,7 +161,7 @@
 	<p class="rounded border border-dashed border-slate-300 py-2 text-center font-sans text-[9px] text-slate-400">Las condiciones de este bloque están desactivadas en este invoice, así que no sale en el PDF.</p>
 {/snippet}
 
-<article bind:this={raiz} class="mx-auto w-full max-w-[560px] bg-white font-pdf-texto text-[10.5px] leading-snug text-pdf-texto shadow-[0_1px_2px_rgba(28,33,80,.08),0_12px_32px_-8px_rgba(28,33,80,.25)]" style={variables(p)} aria-label="Vista previa del invoice">
+<article bind:this={elemento} class="mx-auto w-full max-w-[560px] bg-white font-pdf-texto text-[10.5px] leading-snug text-pdf-texto shadow-[0_1px_2px_rgba(28,33,80,.08),0_12px_32px_-8px_rgba(28,33,80,.25)]" style={variables(p)} aria-label="Vista previa del invoice">
 	{#if p.encabezado.visible}
 		<header class="flex items-center justify-between gap-4 px-7 py-5 {p.encabezado.estilo === 'banda' ? 'bg-pdf-primario text-white' : 'border-b-2 border-pdf-acento text-pdf-primario'}">
 			<div class="min-w-0">
@@ -182,6 +184,7 @@
 				type="button"
 				data-sec={info.secs.join(" ")}
 				data-bloque={b.id}
+				data-no-pdf={vacio(b.id) || (b.id === "imagenes" && !imagenes.length) ? "" : undefined}
 				onclick={() => (editor ? editor.onsel(b.id) : onpick?.(info.secs[0]))}
 				onpointerdown={(e) => e.pointerType === "mouse" && editor?.oniniciar(e, b.id)}
 				class="group relative block w-full rounded px-2 py-2 text-left outline-2 transition-[outline-color,background-color,opacity] {resaltado(b.id, info.secs)} {editor ? 'cursor-grab select-none' : ''} {editor?.arrastrando === b.id ? 'opacity-40' : ''} {linea ? `before:absolute before:inset-x-0 before:h-[3px] before:rounded-full before:bg-rj-navy ${linea}` : ''}"
@@ -198,7 +201,7 @@
 			<p class="rounded border border-dashed border-slate-300 py-6 text-center font-sans text-[10px] text-slate-400">Ocultaste todos los bloques.</p>
 		{/each}
 		{#if d.instrucciones.trim() && !editor}
-			<p class="mx-2 rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">Indicación para la IA: «{d.instrucciones.trim()}»</p>
+			<p data-no-pdf class="mx-2 rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">Indicación para la IA: «{d.instrucciones.trim()}»</p>
 		{/if}
 	</div>
 
