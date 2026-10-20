@@ -69,12 +69,17 @@
 			const blob = await generarPdf(await htmlDelInvoice(articulo!), nombre);
 			if (pdf) URL.revokeObjectURL(pdf.url);
 			pdf = { url: URL.createObjectURL(blob), nombre };
+			descargar();
 			generada = firma;
 		} catch (e) {
 			errorGenerar = e instanceof Error ? e.message : "No se pudo generar el invoice";
 		} finally {
 			generando = false;
 		}
+	}
+
+	function descargar() {
+		if (pdf) Object.assign(document.createElement("a"), { href: pdf.url, download: pdf.nombre }).click();
 	}
 
 	function restablecer() {
@@ -170,10 +175,6 @@
 				<h1 class="text-base leading-tight font-bold text-slate-900">Invoice para el cliente</h1>
 				<p class="truncate text-xs text-slate-500">Lead #{LEAD.id} · {LEAD.nombre} · {LEAD.embudo} / {LEAD.etapa}</p>
 			</div>
-			<p class="hidden items-center gap-1.5 text-xs text-slate-500 sm:flex">
-				<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-				Borrador guardado en el lead
-			</p>
 			<button type="button" class="grid size-8 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-rj-navy" aria-label="Cerrar">
 				<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
 			</button>
@@ -207,7 +208,7 @@
 					<p class="mb-1 flex items-center gap-1 font-semibold">
 						<svg class="size-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>Cómo funciona
 					</p>
-					Llena lo que sepas. La IA redacta la descripción y las condiciones, arma el PDF y lo guarda en el lead.
+					Llena lo que sepas. La IA redacta la descripción y las condiciones, y el PDF se descarga en tu equipo.
 				</div>
 			</nav>
 
@@ -636,9 +637,8 @@
 				{:else if listo && pdf}
 					<p class="flex flex-wrap items-center gap-x-2 text-emerald-700">
 						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-						<span class="font-semibold">PDF listo</span>
-						<a href={pdf.url} target="_blank" rel="noopener" class="font-medium text-rj-navy underline underline-offset-2">Abrir</a>
-						<a href={pdf.url} download={pdf.nombre} class="font-medium text-rj-navy underline underline-offset-2">Descargar {pdf.nombre}</a>
+						<span class="font-semibold">Descargaste {pdf.nombre}</span>
+						<button type="button" onclick={descargar} class="font-medium text-rj-navy underline underline-offset-2">Descargar de nuevo</button>
 						{#if avisoIa}<span class="basis-full text-xs text-amber-700">{avisoIa}</span>{/if}
 					</p>
 				{:else if bloqueantes.length}
