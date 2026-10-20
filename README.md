@@ -1,5 +1,7 @@
 # Jeweler — Tracking de pedidos conectado a Kommo
 
+> Guía para trabajar en el repo: [`CLAUDE.md`](CLAUDE.md). Decisiones pendientes: [`docs/DECISIONES.md`](docs/DECISIONES.md).
+
 Página pública de seguimiento para los clientes de la joyería. El cliente recibe un enlace
 (`/orders/<lead_id>`) y ve en qué etapa de producción está su pedido. La etapa es un reflejo
 directo de la etapa en la que está su lead dentro del CRM **Kommo**.
@@ -146,6 +148,10 @@ pnpm --filter jeweler-servidor test
 ```
 
 ## Pendientes
+
+Las decisiones abiertas del widget de invoice (guardar el PDF en el lead, base de datos, numeración, hosting,
+IA, textos legales…) están en [`docs/DECISIONES.md`](docs/DECISIONES.md). Lo que sigue es del tracking de pedidos.
+
 
 1. **Seguridad del enlace**: el `lead_id` es consecutivo y fácil de adivinar, así que cualquiera puede
    ver la etapa de pedidos ajenos (la página ya no muestra el nombre del lead). Conviene un token por pedido.
