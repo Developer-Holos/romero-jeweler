@@ -1,7 +1,12 @@
 // Borrador del invoice: lo que el asesor llena en el widget de la tarjeta del lead.
 // Los datos del lead llegan de Kommo (widget/script.js); los montos se calculan aquí, nunca en la IA.
+// El borrador se guarda en el servidor, por lead, para que cualquier asesor lo retome.
+import { plantilla, rellenar } from "./plantilla.svelte";
+import { guardarBorradorServidor, hayServidor, leerBorradorServidor } from "./servidor";
 
-export type Lead = { id: number; nombre: string; contacto: string; email: string; responsable: string; presupuesto: number };
+// `producto`: campos del lead en Kommo (Metal, Quilates, Piedra, Talla), si están llenos.
+export type Producto = { metal?: string; quilates?: string; piedra?: string; talla?: string };
+export type Lead = { id: number; nombre: string; contacto: string; email: string; responsable: string; presupuesto: number; producto?: Producto };
 
 // Lead de muestra para el diseñador y para probar fuera de Kommo.
 export const LEAD_EJEMPLO: Lead = {
@@ -78,9 +83,29 @@ const hoy = () => {
 	return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
 };
 
+// Lo que traen los campos de producto del lead, en el formato del borrador.
+function desdeProducto(p: Producto = {}) {
+	const out: { metal?: Metal; metalOtro?: string; kilates?: string; piedras?: Piedra[]; talla?: string; tallaPorConfirmar?: boolean } = {};
+	if (p.metal?.trim()) {
+		const t = p.metal.toLowerCase();
+		const m = METALES.find((x) => x.id !== "otro" && (t.includes(x.id) || t.includes(x.nombre.toLowerCase())));
+		Object.assign(out, m ? { metal: m.id } : { metal: "otro", metalOtro: p.metal.trim() });
+	}
+	const k = p.quilates?.match(/\d{2}/)?.[0];
+	if (k) out.kilates = `${k}k`;
+	if (p.piedra?.trim()) {
+		const tipo = TIPOS_PIEDRA.find((x) => x.toLowerCase() === p.piedra!.trim().toLowerCase()) ?? p.piedra.trim();
+		out.piedras = [{ id: siguienteId++, tipo, origen: "natural", corte: "Redondo", tamano: "", cantidad: "1", posicion: "central" }];
+	}
+	if (p.talla?.trim()) Object.assign(out, { talla: p.talla.trim(), tallaPorConfirmar: false });
+	return out;
+}
+
 export function borradorInicial(lead: Lead) {
 	const depositos = PLANES[0].crear();
 	return {
+		// Lo asigna el servidor al generar (RJ-AAAA-NNNN) y se conserva si se vuelve a generar.
+		numero: "",
 		sinCliente: false,
 		cliente: lead.contacto,
 		email: lead.email,
@@ -102,6 +127,8 @@ export function borradorInicial(lead: Lead) {
 		origen: false,
 		notas: "",
 
+		...desdeProducto(lead.producto),
+
 		valor: lead.presupuesto,
 		conTax: true,
 		taxPct: 0,
@@ -116,7 +143,8 @@ export function borradorInicial(lead: Lead) {
 		imagenes: [] as string[],
 		// texto null = se usa el texto estándar, que se arma con los valores de `params`.
 		clausulas: Object.fromEntries(CLAUSULAS.map((c) => [c.id, { activa: true, texto: null as string | null }])),
-		params: { diasSaldo: 15, medios: "tarjeta de crédito, tarjeta de débito o PayPal", ciudadPickup: "Miami", diasOrigen: "7 y 15", costoTalla: 100, diasAjuste: 60, mesesGarantia: 12 },
+		// Valores por defecto de la plantilla (los edita Romero); en cada invoice se pueden cambiar.
+		params: { ...plantilla.valores },
 		instrucciones: "",
 	};
 }
@@ -135,37 +163,50 @@ export function borradorEjemplo(): Borrador {
 	};
 }
 
-// El borrador de cada lead se guarda en el navegador para no perderlo al cerrar la ventana.
-const claveBorrador = (leadId: number) => `rj-invoice-borrador-${leadId}`;
+// Lo guardado se mezcla con un borrador nuevo, así una versión vieja no rompe el formulario.
+function mezclar(base: Borrador, guardado: unknown): Borrador {
+	if (!guardado || typeof guardado !== "object") return base;
+	const g = guardado as Partial<Borrador>;
+	const d: Borrador = { ...base, ...g, params: { ...base.params, ...g.params }, clausulas: { ...base.clausulas, ...g.clausulas } };
+	// Las imágenes que no llegaron a Kommo (subidas sin servidor) no sobreviven a cerrar la ventana.
+	d.imagenes = (d.imagenes ?? []).filter((id) => !id.startsWith("local-"));
+	siguienteId = Math.max(siguienteId, ...d.piedras.map((p) => p.id + 1), ...d.depositos.map((x) => x.id + 1));
+	if (!d.depositos.length) Object.assign(d, { depositos: base.depositos, cobrarAhora: base.depositos[0].id });
+	return d;
+}
 
-export function cargarBorrador(lead: Lead): Borrador {
+// Copia local por si el servidor no responde: el asesor no pierde lo que lleva escrito.
+const claveLocal = (leadId: number) => `rj-invoice-borrador-${leadId}`;
+const leerLocal = (leadId: number) => {
+	try {
+		return JSON.parse(localStorage.getItem(claveLocal(leadId)) ?? "null");
+	} catch {
+		return null;
+	}
+};
+
+// `origen`: de dónde salió, para avisar si el borrador no es el compartido.
+export async function cargarBorrador(lead: Lead): Promise<{ borrador: Borrador; origen: "servidor" | "local" | "nuevo" }> {
 	const base = borradorInicial(lead);
-	try {
-		const guardado = JSON.parse(localStorage.getItem(claveBorrador(lead.id)) ?? "null") as Partial<Borrador> | null;
-		if (!guardado || typeof guardado !== "object") return base;
-		const d: Borrador = { ...base, ...guardado, params: { ...base.params, ...guardado.params }, clausulas: { ...base.clausulas, ...guardado.clausulas } };
-		// Las imágenes subidas no sobreviven a cerrar la ventana.
-		d.imagenes = [];
-		siguienteId = Math.max(siguienteId, ...d.piedras.map((p) => p.id + 1), ...d.depositos.map((x) => x.id + 1));
-		if (!d.depositos.length) Object.assign(d, { depositos: base.depositos, cobrarAhora: base.depositos[0].id });
-		return d;
-	} catch {
-		return base;
+	if (hayServidor()) {
+		try {
+			const guardado = await leerBorradorServidor(lead.id);
+			return { borrador: mezclar(base, guardado), origen: guardado ? "servidor" : "nuevo" };
+		} catch (e) {
+			console.warn("[invoice] no se pudo leer el borrador del servidor:", e);
+		}
 	}
+	const local = leerLocal(lead.id);
+	return { borrador: mezclar(base, local), origen: local ? "local" : "nuevo" };
 }
 
-export function guardarBorrador(leadId: number, d: Borrador) {
+export async function guardarBorrador(leadId: number, d: Borrador) {
 	try {
-		localStorage.setItem(claveBorrador(leadId), JSON.stringify(d));
+		localStorage.setItem(claveLocal(leadId), JSON.stringify(d));
 	} catch {
-		// modo privado: el borrador solo dura mientras la ventana esté abierta
+		// modo privado: queda solo la copia del servidor
 	}
-}
-
-export function olvidarBorrador(leadId: number) {
-	try {
-		localStorage.removeItem(claveBorrador(leadId));
-	} catch {}
+	if (hayServidor()) await guardarBorradorServidor(leadId, d);
 }
 
 export const draft: Borrador = $state(borradorInicial(LEAD_EJEMPLO));
@@ -197,11 +238,8 @@ export function rangoEntrega(desde: string, hasta: string) {
 	return `${fechaLarga(desde)} al ${fechaLarga(hasta)}`;
 }
 
-export function numeroFactura(d: Borrador) {
-	const [y, m, dd] = (d.emision || "2026-01-01").split("-");
-	const iniciales = d.sinCliente || !d.cliente.trim() ? "XX" : d.cliente.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
-	return `RJ-INV-${y}-${m}${dd}-${iniciales}`;
-}
+// Vacío hasta que el servidor asigna el correlativo al generar.
+export const numeroFactura = (d: Borrador) => (d.sinCliente ? "" : d.numero);
 
 export function totales(d: Borrador) {
 	const valor = Math.max(0, Number(d.valor) || 0);
@@ -245,47 +283,90 @@ export function vinetas(d: Borrador) {
 	}
 	const talla = d.tallaPorConfirmar || !d.talla ? "Talla por confirmar" : `Talla ${d.talla}`;
 	out.push(d.grabado ? `${talla}, con grabado: ${d.grabado}` : talla);
-	if (d.origen) out.push("Incluye el servicio Origen (video del proceso de banco de tu anillo)");
+	if (d.origen) out.push(plantilla.textos.vineta_origen);
 	return out;
 }
 
 const duracion = (meses: number) => (meses % 12 === 0 ? `${meses / 12} ${meses === 12 ? "año" : "años"}` : `${meses} meses`);
 
-// Texto estándar de cada cláusula. **texto** sale en negrita en el invoice.
+// Texto estándar de cada cláusula, armado con los textos de la plantilla (los edita Romero en el diseñador).
+// **texto** sale en negrita en el invoice.
 export function textoEstandar(id: string, d: Borrador): string {
 	const p = d.params;
-	const t = totales(d);
+	const t = plantilla.textos;
+	const pieza = d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza";
 	switch (id) {
 		case "pago": {
-			const lineas = t.depositos.map((x) => {
-				const nombre = t.depositos.length > 1 ? `${x.nombre} (${pctTexto(x.pctCalc)})` : x.nombre;
-				return `El **${nombre}** de ${money(x.montoCalc)} se paga ${x.momento}${x.fecha ? `, a más tardar el ${fechaLarga(x.fecha)}` : ""}.`;
-			});
-			if (t.depositos.length > 1) lineas.push(`Una vez notificada la finalización de la pieza, el cliente cuenta con **${p.diasSaldo} días** para pagar el saldo. La pieza se entrega únicamente al recibir el pago completo.`);
-			lineas.push(`Métodos de pago aceptados: ${p.medios}, a través de un enlace de pago seguro.`);
+			const tot = totales(d);
+			const lineas = tot.depositos.map((x) =>
+				rellenar(t.pago_deposito, {
+					deposito: tot.depositos.length > 1 ? `${x.nombre} (${pctTexto(x.pctCalc)})` : x.nombre,
+					monto: money(x.montoCalc),
+					momento: x.momento,
+					fecha_limite: x.fecha ? rellenar(t.pago_fecha_limite, { fecha: fechaLarga(x.fecha) }) : "",
+				}),
+			);
+			if (tot.depositos.length > 1) lineas.push(rellenar(t.pago_saldo, { diasSaldo: p.diasSaldo }));
+			lineas.push(rellenar(t.pago_medios, { medios: p.medios }));
 			return lineas.join(" ");
 		}
 		case "produccion": {
-			const pieza = d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza";
-			const partes = [`Fecha estimada de entrega: **${rangoEntrega(d.entregaDesde, d.entregaHasta) || "por definir"}**. Al ser una pieza hecha a la medida, los tiempos pueden variar ligeramente. Recibirás un enlace de seguimiento para ver en qué etapa de producción se encuentra tu ${pieza}.`];
-			if (d.envio) partes.push("El envío está incluido y va asegurado por el valor total de la pieza, con firma requerida.");
-			if (d.pickup) partes.push(`${d.envio ? "También puedes" : "Puedes"} recoger tu pieza en persona en ${p.ciudadPickup} (pickup).`);
-			if (d.origen) partes.push(`El video Origen se entrega completo entre ${p.diasOrigen} días después de finalizada la joya.`);
+			const partes = [rellenar(t.produccion, { entrega: rangoEntrega(d.entregaDesde, d.entregaHasta) || "por definir", pieza })];
+			if (d.envio) partes.push(t.produccion_envio);
+			if (d.pickup) partes.push(rellenar(t.produccion_pickup, { ciudadPickup: p.ciudadPickup }));
+			if (d.origen) partes.push(rellenar(t.produccion_origen, { diasOrigen: p.diasOrigen }));
 			return partes.join(" ");
 		}
-		case "cambios":
-			return "El diseño CAD incluye modificaciones sin costo, siempre que se mantenga la misma estructura del diseño. Un cambio total del diseño, o cualquier cambio después de que el cliente apruebe el CAD, tiene un costo adicional y puede modificar la fecha estimada de entrega.";
 		case "talla":
-			return `El primer ajuste es gratis, ya sea para reducir o agrandar. Después del primero, cada talla adicional para agrandar cuesta **${money(p.costoTalla).replace(".00", "")}**; reducir no tiene costo. El ajuste tiene un tiempo de espera mínimo de **${p.diasAjuste} días**. No todos los diseños permiten ajuste de talla.`;
+			return rellenar(t.talla, { costoTalla: money(Number(p.costoTalla)).replace(".00", ""), diasAjuste: p.diasAjuste });
 		case "garantia":
-			return `**${duracion(p.mesesGarantia)}** en engaste y defectos de fabricación. No cubre golpes, desgaste normal, mal uso ni piezas reparadas o modificadas por otro joyero.`;
+			return rellenar(t.garantia, { garantia: duracion(Number(p.mesesGarantia)) });
+		case "cambios":
 		case "variaciones":
-			return "Las imágenes y renders del diseño son una referencia. Por tratarse de una pieza artesanal, pueden existir ligeras variaciones en el peso del metal, las proporciones y la apariencia final respecto al render, sin que esto se considere un defecto.";
 		case "terminos":
-			return "Por tratarse de una pieza hecha a la medida, no se aceptan devoluciones ni cancelaciones, y los depósitos no son reembolsables en ningún caso. Ante cualquier inconformidad, el cliente se compromete a contactar primero a Romero Jeweler para buscar una solución antes de iniciar una disputa con su banco o procesador de pago.";
+			return t[id];
 	}
 	return "";
 }
+
+// Título de un bloque de la plantilla: {pieza} → "anillo" o "pieza".
+export const tituloBloque = (titulo: string, d: Borrador) => titulo.replaceAll("{pieza}", d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza");
+
+// Textos fijos del documento. Si el invoice va en inglés, la IA los traduce junto con las condiciones.
+export const ETIQUETAS = {
+	factura_no: "Factura No.",
+	facturado_a: "Facturado a",
+	fecha_emision: "Fecha de emisión",
+	correo: "Correo del cliente",
+	fecha_limite: "Fecha límite de pago",
+	preparado_por: "Preparado por",
+	valor_pieza: "Valor de la pieza",
+	valor_total_pieza: "Valor total de la pieza",
+	valor_total: "Valor total",
+	esta_factura: "esta factura",
+	antes_del: "antes del",
+	total_ahora: "Total a pagar ahora",
+} as const;
+
+// Todo lo que la IA traduce además de la descripción y las cláusulas: etiquetas, títulos de los bloques,
+// fechas y nombres de depósitos. Las claves son las que usa InvoicePreview.
+export function etiquetasInvoice(d: Borrador): { clave: string; texto: string }[] {
+	const t = totales(d);
+	return [
+		...Object.entries(ETIQUETAS).map(([clave, texto]) => ({ clave, texto })),
+		...plantilla.bloques.map((b) => ({ clave: `bloque_${b.id}`, texto: tituloBloque(b.titulo, d) })),
+		{ clave: "lema", texto: plantilla.encabezado.lema },
+		{ clave: "valor_emision", texto: fechaLarga(d.emision) },
+		{ clave: "valor_vencimiento", texto: d.vencimiento },
+		{ clave: "aviso_pago", texto: textoAvisoPago(d) },
+		{ clave: "nota_imagenes", texto: plantilla.textos.nota_imagenes },
+		...t.depositos.map((x) => ({ clave: `deposito_${x.id}`, texto: x.nombre })),
+		...t.depositos.filter((x) => x.fecha).map((x) => ({ clave: `fecha_${x.id}`, texto: fechaLarga(x.fecha) })),
+	].filter((e) => e.texto.trim());
+}
+
+// Aviso bajo el total a pagar.
+export const textoAvisoPago = (d: Borrador) => rellenar(plantilla.textos.aviso_pago, { para_cada: totales(d).depositos.length > 1 ? " para cada depósito" : "", medios: d.params.medios });
 
 export const textoClausula = (id: string, d: Borrador) => d.clausulas[id].texto ?? textoEstandar(id, d);
 

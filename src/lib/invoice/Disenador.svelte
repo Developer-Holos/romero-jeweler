@@ -3,16 +3,22 @@
 	import InvoicePreview, { type Editor } from "./InvoicePreview.svelte";
 	import { onMount, untrack } from "svelte";
 	import { hayServidor } from "./servidor";
-	import { BLOQUES, ESPACIADOS, FUENTES, PALETAS, cargarPlantillaServidor, guardarPlantilla, moverBloque, subirPlantilla, normalizar, plantilla as p, plantillaInicial, type BloqueId, type Fuente } from "./plantilla.svelte";
+	import { BLOQUES, ESPACIADOS, FUENTES, PALETAS, TEXTOS, VALORES, cargarPlantillaServidor, guardarPlantilla, moverBloque, subirPlantilla, normalizar, plantilla as p, plantillaInicial, type BloqueId, type Fuente, type TextoId, type ValorId } from "./plantilla.svelte";
 
 	// `incrustado`: dentro de la página de ajustes avanzados de Kommo. `volverHref`: enlace al generador, si lo hay.
 	let { incrustado = false, volverHref }: { incrustado?: boolean; volverHref?: string } = $props();
 
 	// La vista previa usa un invoice de muestra con todos los bloques llenos.
 	const d = $state(borradorEjemplo());
+	// Los valores por defecto se ven al instante en la muestra (en un invoice real se copian al crearlo).
+	$effect(() => void Object.assign(d.params, p.valores));
 	let mainEl: HTMLElement;
 
-	type Pestana = "bloques" | "estilo" | "marca";
+	type Pestana = "bloques" | "estilo" | "marca" | "textos";
+	const IDS_TEXTOS = Object.keys(TEXTOS) as TextoId[];
+	const IDS_VALORES = Object.keys(VALORES) as ValorId[];
+	// Marcadores que no existen para ese texto: quedarían tal cual en el invoice.
+	const desconocidos = (id: TextoId) => [...p.textos[id].matchAll(/\{(\w+)\}/g)].map((m) => m[1]).filter((m) => !(TEXTOS[id].marcadores as readonly string[]).includes(m));
 	let pestana: Pestana = $state("bloques");
 	let vista: "ajustes" | "preview" = $state("ajustes"); // solo en pantallas angostas
 	let sel: BloqueId | null = $state(null);
@@ -323,6 +329,48 @@
 	</div>
 {/snippet}
 
+{#snippet textos()}
+	<div class="space-y-6">
+		<p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">Estos textos van en todos los invoices nuevos y tienen peso legal frente al cliente. Cada asesor puede ajustarlos en un invoice puntual desde Condiciones.</p>
+		<fieldset class="space-y-3">
+			<legend class="mb-2 text-sm font-bold text-slate-900">Valores por defecto</legend>
+			<div class="grid gap-3 sm:grid-cols-2">
+				{#each IDS_VALORES as k (k)}
+					{@const v = VALORES[k]}
+					<div>
+						<label class={label} for="v-{k}">{v.nombre}</label>
+						<div class="relative">
+							{#if v.tipo === "money"}<span class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-400">$</span>{/if}
+							<input id="v-{k}" type={v.tipo === "text" ? "text" : "number"} min="0" bind:value={p.valores[k]} class="{input} {v.tipo === 'money' ? 'pl-6' : ''} {'sufijo' in v ? 'pr-14' : ''}" />
+							{#if "sufijo" in v}<span class="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-xs text-slate-400">{v.sufijo}</span>{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		</fieldset>
+
+		<fieldset class="space-y-4 border-t border-slate-200 pt-5">
+			<legend class="mb-1 text-sm font-bold text-slate-900">Textos del invoice</legend>
+			<p class="text-xs text-slate-500">Escribe **así** para negrita. Los marcadores entre llaves, como <code class="rounded bg-slate-100 px-1">{"{diasSaldo}"}</code>, se reemplazan al armar cada invoice.</p>
+			{#each IDS_TEXTOS as id (id)}
+				{@const info = TEXTOS[id]}
+				{@const malos = desconocidos(id)}
+				<div>
+					<div class="mb-1 flex items-baseline justify-between gap-2">
+						<label class={label} for="t-{id}">{info.nombre}</label>
+						{#if p.textos[id] !== info.texto}<button type="button" onclick={() => (p.textos[id] = info.texto)} class="shrink-0 text-[11px] font-semibold text-rj-navy hover:underline">Restaurar</button>{/if}
+					</div>
+					<textarea id="t-{id}" rows={info.texto.length > 160 ? 4 : 2} bind:value={p.textos[id]} class="{input} leading-relaxed {malos.length ? 'border-red-400' : ''}"></textarea>
+					{#if info.marcadores.length}
+						<p class="mt-1 text-[11px] text-slate-500">Marcadores: {#each info.marcadores as m, i (m)}<code class="rounded bg-slate-100 px-1">{`{${m}}`}</code>{i < info.marcadores.length - 1 ? " " : ""}{/each}</p>
+					{/if}
+					{#if malos.length}<p class="mt-1 text-[11px] text-red-700">No existe {malos.map((m) => `{${m}}`).join(", ")}: saldría tal cual en el invoice.</p>{/if}
+				</div>
+			{/each}
+		</fieldset>
+	</div>
+{/snippet}
+
 {#snippet marca()}
 	<div class="space-y-5">
 		<fieldset class="space-y-3">
@@ -429,12 +477,12 @@
 		<div class="flex min-h-0 flex-1">
 			<div class="min-h-0 flex-1 flex-col lg:max-w-[440px] lg:border-r lg:border-slate-200 {vista === 'ajustes' ? 'flex' : 'hidden lg:flex'}">
 				<div class="flex gap-1 border-b border-slate-200 px-4 pt-3" role="tablist" aria-label="Ajustes del diseño">
-					{#each [["bloques", "Bloques"], ["estilo", "Estilo"], ["marca", "Marca"]] as [id, txt] (id)}
+					{#each [["bloques", "Bloques"], ["estilo", "Estilo"], ["marca", "Marca"], ["textos", "Textos"]] as [id, txt] (id)}
 						<button type="button" role="tab" aria-selected={pestana === id} onclick={() => (pestana = id as Pestana)} class="-mb-px rounded-t-md border-b-2 px-3 pb-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy {pestana === id ? 'border-rj-navy text-rj-navy' : 'border-transparent text-slate-500 hover:text-slate-800'}">{txt}</button>
 					{/each}
 				</div>
 				<div data-scroll class="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5" role="tabpanel">
-					{#if pestana === "bloques"}{@render bloques()}{:else if pestana === "estilo"}{@render estilo()}{:else}{@render marca()}{/if}
+					{#if pestana === "bloques"}{@render bloques()}{:else if pestana === "estilo"}{@render estilo()}{:else if pestana === "marca"}{@render marca()}{:else}{@render textos()}{/if}
 				</div>
 			</div>
 

@@ -13,27 +13,29 @@
 </script>
 
 <script lang="ts">
-	import { CLAUSULAS, IMAGENES_MUESTRA, fechaLarga, tituloPieza, money, negritas, numeroFactura, pctTexto, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
+	import { CLAUSULAS, ETIQUETAS, IMAGENES_MUESTRA, fechaLarga, tituloBloque, tituloPieza, money, negritas, numeroFactura, pctTexto, textoAvisoPago, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
 	import { BLOQUES, ESPACIADOS, variables, type Bloque, type Plantilla } from "./plantilla.svelte";
 	import type { Redaccion } from "./servidor";
 	import Thumb from "./Thumb.svelte";
 
-	// `redaccion`: texto que devolvió la IA para este borrador; reemplaza viñetas y cláusulas.
+	// `redaccion`: texto que devolvió la IA para este borrador; reemplaza viñetas, cláusulas y, en inglés, las etiquetas.
 	// `elemento`: el <article>, para copiarlo como HTML al generar el PDF.
 	let { d, p, activa = null, onpick, subidas = [], editor, redaccion = null, elemento = $bindable() }: { d: Borrador; p: Plantilla; activa?: Seccion | null; onpick?: (s: Seccion) => void; subidas?: { id: string; url: string }[]; editor?: Editor; redaccion?: Redaccion | null; elemento?: HTMLElement } = $props();
 
 	let t = $derived(totales(d));
 	let lineas = $derived(redaccion?.vinetas ?? vinetas(d));
+	// Etiqueta traducida por la IA (claves de etiquetasInvoice) o el texto en español.
+	let traducidas = $derived(Object.fromEntries((redaccion?.etiquetas ?? []).map((e) => [e.clave, e.texto])));
+	const et = (clave: string, es: string) => traducidas[clave] ?? es;
 	let imagenes = $derived(d.imagenes.map((id) => ({ id, tono: IMAGENES_MUESTRA.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })));
 	let clausulas = $derived(CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ ...c, texto: textoClausula(c.id, d), ...redaccion?.clausulas.find((r) => r.id === c.id) })));
 	let politicas = $derived(clausulas.filter((c) => !["pago", "produccion", "terminos"].includes(c.id)));
-	let anillo = $derived(d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza");
 	const clausula = (id: string) => clausulas.find((c) => c.id === id);
 
 	// Un bloque sin contenido (cláusula desactivada) no aparece en el PDF; en el editor se avisa.
 	const vacio = (id: BloqueId) => (({ condPago: !clausula("pago"), produccion: !clausula("produccion"), politicas: !politicas.length, terminos: !clausula("terminos") }) as Partial<Record<BloqueId, boolean>>)[id] ?? false;
 	let visibles = $derived(p.bloques.filter((b) => b.visible && (editor || !vacio(b.id))));
-	const titulo = (b: Bloque) => b.titulo.replaceAll("{pieza}", anillo);
+	const titulo = (b: Bloque) => et(`bloque_${b.id}`, tituloBloque(b.titulo, d));
 
 	function resaltado(id: BloqueId, secs: Seccion[]) {
 		if (editor) return editor.sel === id ? "outline-rj-gold bg-rj-gold-soft/40" : "outline-transparent hover:outline-slate-300";
@@ -68,7 +70,7 @@
 	{#if b.id === "datos"}
 		{#if b.titulo}<h2 class="border-b-2 border-pdf-acento pb-1.5 font-pdf-titulos text-[16px] font-bold text-pdf-primario">{titulo(b)} {#if d.idioma === "en"}{@render ia("se redactará en inglés")}{/if}</h2>{/if}
 		<dl class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2.5">
-			{#each [["Factura No.", d.sinCliente ? "" : numeroFactura(d)], ["Facturado a", d.sinCliente ? "" : d.cliente], ["Fecha de emisión", fechaLarga(d.emision)], ["Correo del cliente", d.sinCliente ? "" : d.email], ["Fecha límite de pago", d.vencimiento], ["Preparado por", d.preparadoPor ? `${d.preparadoPor}, Romero Jeweler` : ""]] as [k, v] (k)}
+			{#each [[et("factura_no", ETIQUETAS.factura_no), numeroFactura(d)], [et("facturado_a", ETIQUETAS.facturado_a), d.sinCliente ? "" : d.cliente], [et("fecha_emision", ETIQUETAS.fecha_emision), et("valor_emision", fechaLarga(d.emision))], [et("correo", ETIQUETAS.correo), d.sinCliente ? "" : d.email], [et("fecha_limite", ETIQUETAS.fecha_limite), et("valor_vencimiento", d.vencimiento)], [et("preparado_por", ETIQUETAS.preparado_por), d.preparadoPor ? `${d.preparadoPor}, Romero Jeweler` : ""]] as [k, v], i (i)}
 				<div>
 					<dt class="text-[8px] font-bold tracking-wider text-pdf-acento uppercase">{k}</dt>
 					<dd class="min-h-[14px] {v ? '' : 'mt-1 border-b border-dashed border-slate-300'}">{v}</dd>
@@ -91,17 +93,17 @@
 		{@render subtitulo(titulo(b), true)}
 		<table class="w-full tabular-nums">
 			<tbody class="[&_td]:border-b [&_td]:border-slate-100 [&_td]:py-1.5 [&_td:last-child]:text-right">
-				<tr><td>{d.conTax ? "Valor de la pieza" : "Valor total de la pieza"}</td><td>{money(t.valor)}</td></tr>
+				<tr><td>{d.conTax ? et("valor_pieza", ETIQUETAS.valor_pieza) : et("valor_total_pieza", ETIQUETAS.valor_total_pieza)}</td><td>{money(t.valor)}</td></tr>
 				{#if d.conTax}
 					<tr><td>Sales tax ({d.taxPct || 0}%)</td><td>{money(t.tax)}</td></tr>
-					<tr class="font-bold"><td>Valor total</td><td>{money(t.total)}</td></tr>
+					<tr class="font-bold"><td>{et("valor_total", ETIQUETAS.valor_total)}</td><td>{money(t.total)}</td></tr>
 				{/if}
 				{#each t.depositos as x (x.id)}
 					{@const ahora = x.id === t.ahoraDep?.id}
 					<tr class={ahora ? "" : "opacity-75"}>
 						<td>
-							{x.nombre}{t.depositos.length > 1 ? ` (${pctTexto(x.pctCalc)})` : ""}{ahora ? " - esta factura" : ""}
-							{#if !ahora && x.fecha}<span class="text-[9px] opacity-70"> · antes del {fechaLarga(x.fecha)}</span>{/if}
+							{et(`deposito_${x.id}`, x.nombre)}{t.depositos.length > 1 ? ` (${pctTexto(x.pctCalc)})` : ""}{ahora ? ` - ${et("esta_factura", ETIQUETAS.esta_factura)}` : ""}
+							{#if !ahora && x.fecha}<span class="text-[9px] opacity-70"> · {et("antes_del", ETIQUETAS.antes_del)} {et(`fecha_${x.id}`, fechaLarga(x.fecha))}</span>{/if}
 						</td>
 						<td class={x.montoCalc < 0 ? "text-red-600" : ""}>{money(x.montoCalc)}</td>
 					</tr>
@@ -112,12 +114,12 @@
 			<p class="mt-1 text-right text-[9px] font-semibold text-red-600">Los depósitos no suman el total ({t.diferencia > 0 ? "faltan" : "sobran"} {money(Math.abs(t.diferencia))})</p>
 		{/if}
 		<div class="mt-3 flex items-center justify-between gap-4 px-4 py-2.5 font-bold {p.precios.estiloTotal === 'banda' ? 'bg-pdf-primario text-white' : 'border-y-2 border-pdf-primario text-pdf-primario'}">
-			<span class="text-[10px] uppercase">Total a pagar ahora ({t.ahoraDep?.nombre ?? "—"})</span>
+			<span class="text-[10px] uppercase">{et("total_ahora", ETIQUETAS.total_ahora)} ({t.ahoraDep ? et(`deposito_${t.ahoraDep.id}`, t.ahoraDep.nombre) : "—"})</span>
 			<span class="text-[13px] whitespace-nowrap tabular-nums">{money(t.ahora)} USD</span>
 		</div>
 		{#if p.precios.aviso}
 			<p class="mt-2 bg-pdf-suave px-3 py-2 text-[9px]">
-				Recibirás por separado un enlace de pago seguro {t.depositos.length > 1 ? "para cada depósito " : ""}({d.params.medios}). <b>Al realizar el pago, confirmas que has leído y aceptas todos los términos y condiciones de esta factura.</b>
+				{@render rico(et("aviso_pago", textoAvisoPago(d)))}
 			</p>
 		{/if}
 	{:else if b.id === "condPago" || b.id === "produccion"}
@@ -150,7 +152,7 @@
 					</div>
 				{/each}
 			</div>
-			{#if p.imagenes.nota}<p class="mt-1.5 text-[8.5px] italic opacity-70">Render de referencia del diseño. La pieza final puede presentar ligeras variaciones.</p>{/if}
+			{#if p.imagenes.nota}<p class="mt-1.5 text-[8.5px] italic opacity-70">{et("nota_imagenes", p.textos.nota_imagenes)}</p>{/if}
 		{:else}
 			<p data-no-pdf class="rounded border border-dashed border-slate-300 py-4 text-center font-sans text-[9px] text-slate-400">Esta sección no aparecerá si no eliges imágenes.</p>
 		{/if}
@@ -166,7 +168,7 @@
 		<header class="flex items-center justify-between gap-4 px-7 py-5 {p.encabezado.estilo === 'banda' ? 'bg-pdf-primario text-white' : 'border-b-2 border-pdf-acento text-pdf-primario'}">
 			<div class="min-w-0">
 				<p class="font-pdf-titulos text-[17px] font-bold tracking-wide">{p.encabezado.nombre}</p>
-				{#if p.encabezado.lema}<p class="text-[9px] italic opacity-70">{p.encabezado.lema}</p>{/if}
+				{#if p.encabezado.lema}<p class="text-[9px] italic opacity-70">{et("lema", p.encabezado.lema)}</p>{/if}
 			</div>
 			{#if p.encabezado.logo}
 				<img src={p.encabezado.logo} alt="" class="max-h-11 max-w-28 shrink-0 object-contain" />
@@ -208,7 +210,7 @@
 	{#if p.pie.visible}
 		<footer class="flex justify-between gap-4 border-t border-slate-200 px-7 py-3 text-[8px] opacity-70">
 			<span>{p.pie.texto}</span>
-			{#if p.pie.numero}<span class="shrink-0">{d.sinCliente ? "" : numeroFactura(d)}</span>{/if}
+			{#if p.pie.numero}<span class="shrink-0">{numeroFactura(d)}</span>{/if}
 		</footer>
 	{/if}
 </article>

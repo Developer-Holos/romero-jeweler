@@ -49,13 +49,13 @@ const DIAPOSITIVAS = [
 		img: "pdf",
 		pos: "50% 0%",
 		contener: true,
-		ruta: { es: "RJ-INV-2026-1020-DO.pdf", en: "RJ-INV-2026-1020-DO.pdf" },
+		ruta: { es: "RJ-2026-0001.pdf", en: "RJ-2026-0001.pdf" },
 		etiqueta: { es: "Paso 3 de 4", en: "Step 3 of 4" },
-		titulo: { es: "Genera y descarga el PDF", en: "Generate and download the PDF" },
-		texto: { es: "La IA pule la descripción, o la redacta en inglés, y el PDF con el diseño de la joyería se descarga en tu equipo.", en: "AI polishes the description, or writes it in English, and the PDF with the jeweler's design downloads to your computer." },
+		titulo: { es: "Genera el PDF y queda en el lead", en: "Generate the PDF, saved to the lead" },
+		texto: { es: "Recibe su número correlativo, la IA pule el texto (o lo traduce al inglés) y el PDF queda guardado en el lead y se descarga.", en: "It gets its invoice number, AI polishes the text (or translates it to English) and the PDF is saved to the lead and downloaded." },
 		globos: [
 			[{ es: "La IA pule la redacción", en: "AI polishes the wording" }, 470, 166],
-			[{ es: "Listo para enviar", en: "Ready to send" }, 20, 60],
+			[{ es: "Guardado en el lead", en: "Saved to the lead" }, 20, 60],
 		],
 	},
 	{

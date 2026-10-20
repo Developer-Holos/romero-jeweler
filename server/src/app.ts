@@ -149,6 +149,18 @@ export function crearApp(db: Db) {
 		});
 	});
 
+	// Invoice "sin datos del cliente" (cotización): PDF sin número, no se registra ni va a Kommo.
+	app.post("/pdf", bodyLimit({ maxSize: 20 * MB }), async (c) => {
+		const { html } = (await c.req.json().catch(() => ({}))) as { html?: unknown };
+		if (typeof html !== "string" || !html.includes("<")) return c.json({ error: "Falta el HTML del invoice" }, 400);
+		try {
+			return c.body((await htmlAPdf(html)) as Uint8Array<ArrayBuffer>, 200, { "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="cotizacion.pdf"' });
+		} catch (e) {
+			console.error("[pdf]", e);
+			return c.json({ error: "No se pudo generar el PDF" }, 500);
+		}
+	});
+
 	// ─── Imágenes de referencia: viven en Kommo, como archivos del lead ──────
 	const sinKommo = (c: Context) => c.json({ error: "Kommo no está configurado en el servidor" }, 503);
 	const errorKommo = (c: Context, e: unknown) => {

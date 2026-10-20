@@ -1,253 +1,197 @@
-# Decisiones pendientes — widget de invoice
+# Decisiones — widget de invoice
 
-Lo que el equipo tiene que decidir antes de poner el widget de invoice en producción para Romero Jeweler.
-Cada punto dice cómo está hoy, las opciones, una recomendación y qué se necesita para decidir.
-Al decidir, anotar la respuesta en **Decisión** con la fecha y quién decidió.
+Decisiones para poner el widget de invoice de Romero Jeweler en producción. Las tomó **ctineo (Holos) el
+2026-10-20**; aquí queda cada una con lo que ya está hecho en el código y lo que falta.
 
-Estado del código al escribir esto (2026-10-20): rama `claude/invoice-generator-widget-c75271`. El widget
-(`widget/`), el servidor (`server/`) y el tour están hechos y probados en un Kommo simulado. Todavía no se
-instaló en la cuenta real de Kommo.
+Estado: **Hecho** (implementado y probado contra un Kommo simulado) · **Por verificar** (hecho, falta probarlo en la
+cuenta real) · **Externo** (depende de Romero, su contador o una configuración que hace Holos).
 
 ## Resumen
 
-| # | Decisión | Bloquea producción | Recomendación |
+| # | Decisión | Estado | Qué falta |
 | --- | --- | --- | --- |
-| 1 | [¿Guardar el PDF en el lead?](#1-guardar-el-pdf-en-el-lead) | No | Por ahora no; si se pide, como archivo adjunto del lead |
-| 2 | [¿Base de datos?](#2-base-de-datos) | Depende del hosting | Postgres gestionado si se quiere historial; si no, seguir con el archivo JSON |
-| 3 | [Numeración de facturas](#3-numeración-de-facturas) | **Sí** | Número correlativo asignado por el servidor |
-| 4 | [Dónde se publica el servidor](#4-dónde-se-publica-el-servidor) | **Sí** | Railway, como los otros proxies de Holos |
-| 5 | [Seguridad de la clave del widget](#5-seguridad-de-la-clave-del-widget) | No | Aceptar por ahora, igual que los otros widgets |
-| 6 | [OpenAI: cuenta, modelo y costo](#6-openai-cuenta-modelo-y-costo) | **Sí** (para usar IA) | Cuenta de Romero o de Holos; modelo chico |
-| 7 | [Invoices en inglés](#7-invoices-en-inglés) | No | Diccionario fijo para las etiquetas del PDF |
-| 8 | [Imágenes de referencia](#8-imágenes-de-referencia) | No | Guardarlas en el servidor junto al borrador |
-| 9 | [Dónde vive el borrador](#9-dónde-vive-el-borrador) | No | Va de la mano con la #2 |
-| 10 | [Textos legales y valores por defecto](#10-textos-legales-y-valores-por-defecto) | **Sí** | Que Romero los revise y confirme |
-| 11 | [Sales tax](#11-sales-tax) | **Sí** | Que lo confirme el contador de Romero |
-| 12 | [Datos del lead en Kommo](#12-datos-del-lead-en-kommo) | No | Probar en la cuenta real; crear campos solo si se usan |
-| 13 | [Repositorio del servidor](#13-repositorio-del-servidor) | No | Dejarlo en este repo mientras sea un solo cliente |
-| 14 | [Instalación y distribución del widget](#14-instalación-y-distribución-del-widget) | **Sí** | Subida privada a la cuenta de Romero |
+| 1 | PDF al campo "Invoice" (archivo) del lead | Por verificar | Crear el campo en Kommo y probar la subida con la cuenta real |
+| 2 | Postgres gestionado | Hecho | Crear la base en Railway |
+| 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
+| 4 | Railway, cuenta de Holos | Externo | Crear el servicio con el `Dockerfile` |
+| 5 | Clave fija, sin límite de uso | Hecho | — |
+| 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
+| 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
+| 8 | Imágenes en Kommo | Por verificar | Probar con la cuenta real; adjuntos de chats sin resolver |
+| 9 | Borrador en el servidor, por lead | Hecho | — |
+| 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
+| 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
+| 12 | Campos de producto y precio del lead solo lectura | Hecho · Externo | Crear los campos en Kommo |
+| 13 | El servidor se queda en este repo | Hecho | — |
+| 14 | Instalación privada; la hace y la prueba Holos | Externo | Instalar y probar con un lead real |
+
+**Bloquea producción:** #3 (formato), #4 (servidor publicado), #6 (prueba con OpenAI), #10 (textos de Romero),
+#11 (sales tax) y #14 (prueba en la cuenta real, que cubre también #1, #8 y #12).
 
 ---
 
 ## 1. Guardar el PDF en el lead
 
-**Hoy:** el PDF se genera en el servidor y **solo se descarga** en el equipo del asesor. Kommo no se entera de
-que se emitió un invoice.
+**Decisión:** el PDF se guarda en un campo del lead llamado **Invoice**, de tipo archivo. Además se descarga.
 
-**Opciones:**
-- **a) Dejarlo así.** Sin cambios. El asesor manda el PDF por el chat como cualquier archivo.
-- **b) Adjuntarlo al lead** (sección Archivos de Kommo) desde el servidor. Necesita un token de Kommo en el
-  servidor (`KOMMO_ACCESS_TOKEN`, ya existe para el tracking) y la API de archivos de Kommo.
-- **c) Nota en el lead** con el número, el total y un enlace al PDF guardado en el servidor. Necesita guardar los
-  PDF (ver #2) y servirlos con un enlace que no se pueda adivinar.
-- **d) Mover el lead de etapa** (ej. a "Invoice Enviado", id 113110407) al generar. Se puede combinar con b o c.
+**Hecho:**
+- El servidor sube el PDF a Kommo Drive y lo pone en el campo (`server/src/kommo.ts`, `POST /invoices/:numero/pdf`).
+- Si Kommo falla, el PDF se descarga igual y el widget avisa ("No se pudo guardar en el lead…").
+- El campo guarda un solo archivo: un invoice nuevo del mismo lead reemplaza al anterior en el campo. El historial
+  completo queda en la tabla `invoices` de Postgres.
 
-**Recomendación:** a) por ahora (es lo que se pidió). Si el equipo quiere ver en Kommo qué invoices se
-mandaron, b) es lo más simple y no requiere base de datos.
-
-**Para decidir:** ¿los asesores o Romero necesitan ver los invoices desde Kommo?
-
-**Decisión:** _pendiente_
+**Falta:**
+- Crear el campo "Invoice" (tipo archivo) en la cuenta de Romero y poner su id en `KOMMO_CAMPO_INVOICE`.
+- **Verificar con la cuenta real** que la API de Kommo Drive y el formato del valor del campo archivo funcionen como
+  los implementé (están según la documentación de la API v4; solo se probaron contra un Kommo simulado). Si no se
+  puede, volver a esta decisión.
 
 ## 2. Base de datos
 
-**Hoy no hay base de datos:**
-- La plantilla de diseño compartida es un archivo `server/data/plantilla.json`.
-- Los borradores de cada lead viven en el navegador de cada asesor (`localStorage`).
-- Los invoices emitidos no se registran en ningún lado.
+**Decisión:** Postgres gestionado, con `DATABASE_URL`.
 
-**Opciones:**
-- **a) Seguir sin base de datos.** Alcanza mientras solo haya que guardar la plantilla. El hosting necesita
-  disco persistente (si el disco se borra al redesplegar, se pierde el diseño).
-- **b) SQLite en el servidor** (`node:sqlite`, sin dependencias). Simple; también pide disco persistente.
-- **c) Postgres gestionado** (Railway, Supabase o Neon) con `DATABASE_URL`. Funciona en cualquier hosting y con
-  varios asesores a la vez.
-- **d) Guardar todo en Kommo** (campos o notas del lead). Sin base propia, pero limitado para la plantilla y
-  para consultar el historial.
+**Hecho:** tablas `ajustes` (plantilla y modelo de IA), `borradores` (por lead), `contadores` e `invoices`
+(`server/src/db.ts`). El esquema se crea solo al arrancar. Sin `DATABASE_URL` el servidor usa PGlite (Postgres en
+WASM) en `server/data/`, para desarrollar y para los tests.
 
-**Qué necesitaría base de datos:** el historial de invoices emitidos, el número correlativo (#3), los borradores
-compartidos entre asesores o dispositivos (#9) y las imágenes subidas (#8).
-
-**Recomendación:** si se quiere cualquiera de esas cuatro cosas, c). Si no, a).
-
-**Para decidir:** ¿hace falta historial de invoices o un número correlativo? ¿Dónde se publica el servidor (#4)?
-
-**Decisión:** _pendiente_
+**Falta:** agregar Postgres al proyecto de Railway (inyecta `DATABASE_URL`).
 
 ## 3. Numeración de facturas
 
-**Hoy:** el número se arma en el navegador: `RJ-INV-AAAA-MMDD-XX`, donde XX son las iniciales del cliente (ej.
-`RJ-INV-2026-1020-DO`). Problemas:
-- Dos invoices para el mismo cliente el mismo día salen con **el mismo número**.
-- No es correlativo, y para efectos contables puede que tenga que serlo.
-- Al generar de nuevo (por un cambio) se repite el número, aunque el contenido sea otro.
+**Decisión:** correlativo asignado por el servidor: `RJ-2026-0001`, `RJ-2026-0002`…
 
-**Opciones:**
-- **a) Dejarlo así** y que el asesor lo corrija a mano si choca (hoy el campo no es editable).
-- **b) Agregar un sufijo** (ej. `-2`) cuando se genera más de uno el mismo día para ese lead. No es correlativo.
-- **c) Correlativo asignado por el servidor** (`RJ-2026-0001`, `0002`…). Necesita base de datos (#2).
-- **d) Usar el id del lead** (`RJ-INV-21458233`) más una versión (`-v2`).
+**Hecho:**
+- El número se asigna al generar, antes de armar el PDF, porque va impreso en él. La asignación es atómica: dos
+  asesores generando a la vez nunca reciben el mismo número (probado con 25 pedidos simultáneos).
+- El contador **se reinicia cada año** (el año va en el número).
+- **Al regenerar** el mismo invoice se conserva su número (queda en el borrador). "Restablecer" deja el borrador en
+  blanco y el próximo invoice recibe un número nuevo. *Decidido al implementar; confirmar si sirve.*
+- Un invoice "sin datos del cliente" (cotización) no recibe número ni se guarda en Kommo.
 
-**Recomendación:** c) si Romero lleva contabilidad por número de factura; si no, d), que es único y fácil de
-buscar en Kommo.
-
-**Para decidir:** preguntarle a Romero (o a su contador) qué formato necesita.
-
-**Decisión:** _pendiente_
+**Falta:** que Romero o su contador confirmen el formato `RJ-AAAA-NNNN` y el reinicio anual.
 
 ## 4. Dónde se publica el servidor
 
-**Hoy:** el servidor (`server/`) solo corre en local. Necesita:
-- **Chromium** para generar el PDF (Playwright), así que no sirve un hosting serverless como Vercel.
-- **Disco persistente** si la plantilla sigue en un archivo (#2).
-- **HTTPS**, y el dominio de Kommo en `ORIGENES`.
+**Decisión:** Railway, en la cuenta de Holos.
 
-**Opciones:** Railway (donde ya están `server-widget-chats` y otros proxies de Holos), un VPS, Render o Fly.io.
+**Hecho:** `server/Dockerfile` (imagen oficial de Playwright, con Chromium) y `server/railway.json` (healthcheck en
+`/salud`). Se construye desde la raíz del repo.
 
-**Recomendación:** Railway con un volumen para `data/`, igual que los demás proxies.
+**Falta (Holos):**
+1. Crear el servicio en Railway desde este repo, con *Config file path* `server/railway.json`.
+2. Agregar Postgres al proyecto.
+3. Variables: `WIDGET_KEY`, `ADMIN_KEY`, `OPENAI_API_KEY`, `KOMMO_SUBDOMAIN`, `KOMMO_ACCESS_TOKEN`,
+   `KOMMO_CAMPO_INVOICE` y `ORIGENES` con `https://romerojeweler.kommo.com` (ver `server/.env.example`).
+4. Revisar que la versión de la imagen del `Dockerfile` coincida con la de `playwright` del lockfile.
 
-**Para decidir:** quién paga el hosting (Holos o Romero) y bajo qué cuenta queda.
-
-**Decisión:** _pendiente_
+El `Dockerfile` no se pudo probar en local (no hay Docker en el equipo de desarrollo).
 
 ## 5. Seguridad de la clave del widget
 
-**Hoy:** la clave (`widget_key`) se configura en los ajustes del widget y viaja en el header `X-Widget-Key`. Como
-el widget corre en el navegador, **cualquier usuario de la cuenta de Kommo puede verla** con las herramientas del
-navegador. Con ella se pueden generar PDF, gastar IA y cambiar la plantilla de diseño. El servidor además solo
-acepta los orígenes de `ORIGENES`.
+**Decisión:** solo clave fija (`X-Widget-Key`), sin límite de uso. Igual que los otros widgets de Holos.
 
-**Opciones:**
-- **a) Aceptarlo**, igual que los otros widgets de Holos con proxy. El riesgo se limita a gente de la cuenta.
-- **b) Límite de uso** por clave (ej. N invoices por minuto) para acotar el gasto de IA.
-- **c) Validar la sesión de Kommo** en el servidor en vez de una clave fija. Más seguro, más trabajo.
-
-**Recomendación:** a) con b) para la IA.
-
-**Decisión:** _pendiente_
+**Hecho.** Aparte, para cambiar el modelo de IA hay una segunda clave (`ADMIN_KEY`) que no viaja al navegador.
 
 ## 6. OpenAI: cuenta, modelo y costo
 
-**Hoy:** la IA está lista pero **no se probó contra OpenAI** (falta la clave). Sin `OPENAI_API_KEY` el widget
-genera igual el PDF, con el texto armado de los campos. El modelo por defecto es `gpt-5-mini` y se cambia con
-`OPENAI_MODEL`. Cada invoice hace una sola llamada, chica.
+**Decisión:** cuenta de Holos; el modelo se cambia desde el servidor sin redesplegar; la IA se intenta siempre, con
+fallback al texto estándar.
 
-**Para decidir:**
-- ¿Con qué cuenta de OpenAI (Romero o Holos)? ¿Quién paga?
-- ¿Qué modelo? Uno chico alcanza para pulir viñetas y traducir.
-- ¿La IA es obligatoria o un extra? Hoy es un extra: si falla, el PDF sale con el texto estándar.
+**Hecho:**
+- El modelo queda guardado en Postgres. Se consulta y se cambia con la clave de administración:
+  ```sh
+  curl -H "X-Admin-Key: $ADMIN_KEY" https://<servidor>/admin/ia
+  curl -X PUT -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" -d '{"modelo":"gpt-5-mini"}' https://<servidor>/admin/ia
+  ```
+  `OPENAI_MODEL` es solo el modelo inicial.
+- Si la IA no responde o falla, el invoice sale igual con el texto estándar y el widget lo avisa.
 
-**Decisión:** _pendiente_
+**Falta:** probar contra OpenAI con la clave de Holos (todavía no se hizo) y vigilar el gasto en la cuenta (no hay
+tope por clave, ver #5).
 
 ## 7. Invoices en inglés
 
-**Hoy:** si el invoice va en inglés, la IA traduce la descripción y las condiciones, pero las **etiquetas fijas
-del PDF siguen en español** ("Factura No.", "Total a pagar ahora", "Facturado a", las fechas, etc.). Sin IA, todo
-sale en español.
+**Decisión:** la IA traduce todo, etiquetas y fechas incluidas.
 
-**Opciones:**
-- **a) Diccionario fijo** para las etiquetas y fechas (sin IA, siempre igual), y la IA solo para los textos libres.
-- **b) Que la IA traduzca todo**, etiquetas incluidas. Más caro y puede variar entre invoices.
-- **c) Plantillas de condiciones ya escritas en inglés** por Romero, sin depender de la IA.
+**Hecho:**
+- Además de la descripción y las cláusulas, el widget manda a la IA las etiquetas del documento ("Factura No.",
+  "Total a pagar ahora"…), los títulos de los bloques, las fechas, el lema y los nombres de los depósitos
+  (`etiquetasInvoice` en `src/lib/invoice/invoice.svelte.ts`).
+- El control de cifras ahora **también cubre las fechas**: si la IA cambia un número o el mes de una fecha
+  ("octubre" → "November"), ese texto queda en el original (`server/src/ia.ts`, tests en `ia.test.ts`).
+- Sin IA, el invoice en inglés sale en español (como se decidió) y el widget lo avisa.
 
-**Recomendación:** a) + c) si Romero tiene sus condiciones en inglés.
-
-**Para decidir:** ¿cuántos clientes reciben el invoice en inglés? ¿Romero tiene textos oficiales en inglés?
-
-**Decisión:** _pendiente_
+**Falta:** revisar un invoice real en inglés, con OpenAI activo.
 
 ## 8. Imágenes de referencia
 
-**Hoy:** el asesor sube los renders o fotos desde su equipo. **No se guardan con el borrador**: si cierra la ventana,
-tiene que volver a subirlas. Tampoco se leen los archivos que el cliente mandó por el chat de Kommo.
+**Decisión:** las imágenes viven en Kommo; el servidor no las guarda.
 
-**Opciones:**
-- **a) Dejarlo así.**
-- **b) Guardar las imágenes en el servidor** junto al borrador del lead (necesita almacenamiento, ver #2).
-- **c) Leer los archivos adjuntos del lead en Kommo** para elegir de ahí. Depende de que la API de Kommo los
-  exponga para los chats (WhatsApp, Instagram); hay que investigarlo.
+**Hecho:**
+- Las que sube el asesor desde el widget se suben a Kommo Drive y se adjuntan al lead.
+- El widget muestra las imágenes que ya están adjuntas al lead (subidas desde el widget o a mano en Kommo) para
+  elegirlas.
+- El borrador guarda solo las referencias (uuid), y las imágenes pasan por el servidor porque Kommo Drive pide el
+  token.
 
-**Recomendación:** b) si se hace la base de datos; c) solo después de confirmar que la API lo permite.
-
-**Decisión:** _pendiente_
+**Falta:**
+- **Verificar con la cuenta real** subida, listado y descarga (igual que #1).
+- Los adjuntos que el cliente manda por **WhatsApp o Instagram** no son archivos del lead en Kommo: no aparecen.
+  Para usarlos, el asesor los adjunta al lead o los sube desde el widget. Si hace falta leerlos directo del chat,
+  es otra investigación de la API.
 
 ## 9. Dónde vive el borrador
 
-**Hoy:** el borrador de cada lead se guarda en el navegador del asesor. Si otro asesor abre el mismo lead, o el mismo
-asesor desde otro equipo, empieza de cero.
+**Decisión:** en el servidor, por lead.
 
-**Opciones:** a) dejarlo así; b) guardarlo en el servidor por lead (necesita #2).
+**Hecho:** se carga al abrir la ventana y se guarda solo, un momento después de cada cambio. Si el servidor no
+responde, queda una copia en el navegador y el widget avisa ("Sin conexión: guardado solo en este equipo").
 
-**Recomendación:** decidirlo junto con #2. Si cada lead lo atiende siempre un solo asesor desde su equipo, a) alcanza.
-
-**Decisión:** _pendiente_
+**Concurrencia:** si dos asesores editan el mismo lead a la vez, **gana el último guardado**. *Decidido al
+implementar; si se vuelve un problema, se puede avisar del conflicto.*
 
 ## 10. Textos legales y valores por defecto
 
-Todo esto está escrito en el código (`src/lib/invoice/invoice.svelte.ts`) y **nadie de Romero lo revisó**:
-- Razón social del pie: "Golden Rooster LLC, dba Romero Jeweler · Miami, FL · contact@yrjeweler.com".
-- Condiciones: plazo de 15 días para pagar el saldo; ajuste de talla $100 por talla adicional y 60 días de espera;
-  garantía de 12 meses; no hay devoluciones y los depósitos no se reembolsan.
-- Plan de depósitos por defecto: 50 / 50. Métodos de pago: tarjeta de crédito, débito o PayPal.
-- Servicio "Origen" (video del proceso) entregado entre 7 y 15 días después.
-- Lema "Más que una joya, un legado." y monograma "RJ" (o el logo que se suba en el editor de diseño).
+**Decisión:** Romero revisa y confirma cada valor; los textos se editan en el diseñador sin tocar código.
 
-**Para decidir:** que Romero confirme o corrija cada valor. Si cambian seguido, se pueden pasar al editor de diseño
-(ajustes avanzados) para que no haga falta tocar código.
+**Hecho:** pestaña **Textos** en ajustes avanzados, con los valores por defecto (plazo del saldo, métodos de pago,
+costo de talla, garantía…) y cada texto del invoice. Avisa si se escribe un marcador que no existe. Se guardan en
+la plantilla (Postgres).
 
-**Decisión:** _pendiente_
+**Falta:** mandarle a Romero `docs/TEXTOS_PARA_ROMERO.md` y cargar sus correcciones antes de producción.
 
 ## 11. Sales tax
 
-**Hoy:** la línea de sales tax aparece por defecto con **0 %** y el asesor puede cambiar el porcentaje en cada invoice.
+**Decisión:** pendiente del contador de Romero. Mientras tanto, 0 % editable.
 
-**Para decidir:** si Romero cobra sales tax de Florida, en qué casos (envío fuera del estado, pickup en Miami) y qué
-porcentaje. Según la respuesta: quitar la línea, ponerle un valor por defecto o calcularlo según el tipo de entrega.
-Lo tiene que confirmar su contador.
-
-**Decisión:** _pendiente_
+**Falta:** que el contador confirme si aplica, en qué casos (pickup en Miami, envío dentro o fuera de Florida) y con
+qué porcentaje. Según eso se quita la línea, se precarga un valor o se calcula por tipo de entrega.
 
 ## 12. Datos del lead en Kommo
 
-**Hoy:** al abrir el generador se precargan el nombre y el correo del contacto principal, el responsable y el precio
-del lead (como presupuesto). Sin verificar en la cuenta real:
-- El nombre del responsable se toma de `APP.constant('managers')`.
-- Que el panel aparezca a la primera en la tarjeta (hay un montaje de respaldo, igual que en otros widgets).
+**Decisión:** crear campos de producto y precargarlos; el precio del lead es solo lectura.
 
-Además, Kommo no tiene campos de producto (metal, piedra, talla); por eso esos datos se llenan a mano en el invoice.
+**Hecho:**
+- El widget lee los campos **Metal**, **Quilates**, **Piedra** y **Talla** del lead **por nombre** (no por id) y los
+  precarga en el invoice, con la etiqueta "Lead". El metal se reconoce si contiene "amarillo", "blanco", "rosa" o
+  "platino"; si no, va como "Otro" con el texto tal cual.
+- El precio del lead solo se lee (como presupuesto); el widget nunca lo modifica.
 
-**Para decidir:**
-- ¿Conviene crear campos en Kommo (metal, quilates, piedra, talla) para precargar el invoice y reusarlos en el
-  tracking (el subtítulo del pedido ya lo pide)?
-- ¿Al generar el invoice se actualiza el precio del lead con el total?
-
-**Decisión:** _pendiente_
+**Falta (Holos, en la cuenta de Romero):** crear los campos con esos nombres exactos. Sugerencia de tipos: Metal
+(lista: Oro amarillo, Oro blanco, Oro rosa, Platino), Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante,
+Esmeralda, Zafiro, Rubí, Moissanita, Morganita) y Talla (texto). Verificar en la cuenta real el nombre del
+responsable (`APP.constant('managers')`) y que el panel aparezca a la primera.
 
 ## 13. Repositorio del servidor
 
-**Hoy:** `server/` vive en este repo, como paquete del workspace. Los otros proxies de Holos tienen su propio repo
-(ej. `server-widget-chats`).
-
-**Opciones:** a) dejarlo aquí, con el widget y la app en un solo lugar; b) separarlo en su propio repo, como los demás.
-
-**Recomendación:** a) mientras sirva a un solo cliente. Separarlo si se reutiliza para otras joyerías.
-
-**Decisión:** _pendiente_
+**Decisión:** se queda en este repo. **Hecho.** Railway despliega solo `server/` (ver #4).
 
 ## 14. Instalación y distribución del widget
 
-**Hoy:** el zip (`pnpm widget:zip`) está listo para subirse en **Ajustes → Integraciones → Crear integración → Subir
-widget**. Ya tiene logos y tour.
+**Decisión:** instalación privada en la cuenta de Romero; Holos la instala y la prueba.
 
-**Para decidir:**
-- ¿Instalación privada solo en la cuenta de Romero, o publicarlo en el marketplace de Kommo?
-- ¿Quién lo instala y lo prueba en la cuenta real? Ver los puntos sin verificar en #12.
-- ¿Quién mantiene los textos de Romero cuando cambien (#10)?
-
-**Recomendación:** subida privada a la cuenta de Romero y una prueba con un lead real antes de dárselo a los asesores.
-
-**Decisión:** _pendiente_
-
----
-
-Pendientes del tracking de pedidos (otra parte del repo): ver la sección **Pendientes** del `README.md`.
+**Falta (Holos):**
+1. `pnpm widget:zip` y subir `widget/invoice-romero-jeweler.zip` en Ajustes → Integraciones → Crear integración.
+2. En los ajustes del widget: URL del servidor de Railway y la `WIDGET_KEY`.
+3. Probar con un lead real: precarga del lead (#12), imágenes (#8), generar (número, PDF en el campo Invoice, #1 y
+   #3), un invoice en inglés (#7) y el diseñador con los textos de Romero (#10).

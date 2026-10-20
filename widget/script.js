@@ -150,7 +150,7 @@ define(['jquery'], function ($) {
     };
 
     // Datos del lead para precargar el invoice: contacto principal, correo,
-    // responsable y presupuesto (precio del lead).
+    // responsable, presupuesto (precio del lead, solo lectura) y campos de producto.
     this.leadInfo = function () {
       var leadId = APP.data.current_card.id;
       return $.ajax({ url: '/api/v4/leads/' + leadId + '?with=contacts', dataType: 'json' })
@@ -163,7 +163,8 @@ define(['jquery'], function ($) {
             contacto: '',
             email: '',
             responsable: self.userName(lead.responsible_user_id),
-            presupuesto: Number(lead.price) || 0
+            presupuesto: Number(lead.price) || 0,
+            producto: self.producto(lead)
           };
           if (!principal) return info;
           return $.ajax({ url: '/api/v4/contacts/' + principal.id, dataType: 'json' })
@@ -178,6 +179,18 @@ define(['jquery'], function ($) {
           // Rechazo explícito: en jQuery 3 devolver un valor desde aquí resolvería la promesa.
           return $.Deferred().reject(self.t('error_lead')).promise();
         });
+    };
+
+    // Campos de producto del lead, por nombre (Metal, Quilates, Piedra, Talla): así no dependen del id
+    // que Kommo les asigne en cada cuenta. Ver docs/DECISIONES.md, #12.
+    this.producto = function (lead) {
+      var campos = lead.custom_fields_values || [];
+      function valor(nombre) {
+        var campo = campos.filter(function (f) { return String(f.field_name || '').trim().toLowerCase() === nombre; })[0];
+        var v = campo && campo.values && campo.values[0] && campo.values[0].value;
+        return v == null ? '' : String(v);
+      }
+      return { metal: valor('metal'), quilates: valor('quilates'), piedra: valor('piedra'), talla: valor('talla') };
     };
 
     this.fieldValue = function (entity, code) {

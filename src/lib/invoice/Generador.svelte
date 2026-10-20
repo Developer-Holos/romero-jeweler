@@ -1,27 +1,46 @@
 <script lang="ts">
-	import { CLAUSULAS, CORTES, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, numeroFactura, pendientes, textoClausula, totales, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
+	import { CLAUSULAS, CORTES, etiquetasInvoice, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, pendientes, textoClausula, totales, type Borrador, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
 	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
-	import { ErrorServidor, generarPdf, hayServidor, htmlDelInvoice, redactar, type Redaccion } from "./servidor";
+	import { ErrorServidor, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Redaccion } from "./servidor";
 	import { onMount, tick, untrack } from "svelte";
 
 	// `flotante`: ventana sobre la tarjeta del lead en Kommo. `disenoHref`: enlace al editor del diseño, si lo hay.
 	let { lead, onclose, flotante = false, disenoHref }: { lead: Lead; onclose?: () => void; flotante?: boolean; disenoHref?: string } = $props();
 
-	// Cada lead tiene su borrador, guardado en el navegador mientras se edita.
-	// La ventana se crea de nuevo para cada lead, así que basta con cargarlo una vez.
-	Object.assign(d, cargarBorrador(untrack(() => lead)));
-	$effect(() => guardarBorrador(lead.id, d));
+	// El borrador de cada lead vive en el servidor: cualquier asesor lo retoma desde cualquier equipo.
+	// Mientras carga, el formulario no se muestra (el borrador en memoria puede ser de otro lead).
+	let cargando = $state(true);
+	let guardado: "ok" | "guardando" | "local" = $state("ok");
+	let esperaGuardar: ReturnType<typeof setTimeout> | undefined;
+	$effect(() => {
+		const copia = JSON.stringify(d); // lee todo el borrador: cualquier cambio vuelve a guardar
+		if (untrack(() => cargando)) return;
+		guardado = "guardando";
+		clearTimeout(esperaGuardar);
+		esperaGuardar = setTimeout(() => guardarBorrador(lead.id, JSON.parse(copia)).then(() => (guardado = "ok"), () => (guardado = "local")), 800);
+	});
 
 	let activa: Seccion | null = $state(null);
 	let vista: "form" | "preview" = $state("form"); // solo en pantallas angostas
 	let generando = $state(false);
 	let generada = $state(""); // copia de los datos con los que se generó el último PDF
 	let paso = $state(0);
-	let subidas: { id: string; url: string }[] = $state([]);
+
+	// Imágenes: las del lead en Kommo, más las subidas sin Kommo en el servidor (solo duran en esta ventana).
+	let enKommo: ImagenKommo[] = $state([]);
+	let locales: { id: string; url: string }[] = $state([]);
+	let urls: Record<string, string> = $state({});
+	let subiendo = $state(0);
+	let avisoImagenes = $state("");
+	const mostrar = (uuid: string) => {
+		if (!untrack(() => urls[uuid])) urlImagen(uuid).then((u) => (urls[uuid] = u), () => {});
+	};
+	$effect(() => d.imagenes.forEach((id) => !id.startsWith("local-") && mostrar(id)));
+	let galeria = $derived([...enKommo.map((a) => ({ id: a.uuid, nombre: a.nombre, url: urls[a.uuid] ?? "" })), ...locales.map((a, i) => ({ ...a, nombre: `Imagen ${i + 1}` }))]);
+	let subidas = $derived([...Object.entries(urls).map(([id, url]) => ({ id, url })), ...locales]);
 
 	let t = $derived(totales(d));
-	let galeria = $derived(subidas.map((s, i) => ({ ...s, nombre: `Imagen ${i + 1}` })));
 	let faltan = $derived(pendientes(d));
 	let bloqueantes = $derived(faltan.filter((p) => p.bloquea));
 	let estado = $derived(Object.fromEntries(SECCIONES.map((s) => {
@@ -29,17 +48,34 @@
 		return [s.id, ps.some((p) => p.bloquea) ? "error" : ps.length ? "aviso" : "ok"];
 	})) as Record<Seccion, "ok" | "aviso" | "error">);
 
-	const PASOS = ["Redactando descripción y condiciones", "Generando el PDF"];
+	const PASOS = ["Asignando el número del invoice", "Redactando con IA", "Generando el PDF y guardándolo en el lead"];
 
 	let articulo: HTMLElement | undefined = $state();
 	let pdf: { url: string; nombre: string } | null = $state(null);
 	let errorGenerar = $state("");
 	let avisoIa = $state("");
-	// La redacción de la IA vale mientras el borrador no cambie.
+	let avisoKommo = $state("");
+	// La redacción de la IA vale mientras el borrador no cambie (el número no cuenta: se asigna al generar).
+	const firmaDe = (b: Borrador) => JSON.stringify({ ...b, numero: "" });
 	let redaccion = $state<{ para: string; texto: Redaccion } | null>(null);
-	let redaccionVigente = $derived(redaccion && redaccion.para === JSON.stringify(d) ? redaccion.texto : null);
+	let redaccionVigente = $derived(redaccion && redaccion.para === firmaDe(d) ? redaccion.texto : null);
 
-	onMount(() => void cargarPlantillaServidor());
+	onMount(() => {
+		void cargarPlantillaServidor();
+		cargarBorrador(untrack(() => lead)).then(({ borrador }) => {
+			Object.assign(d, borrador);
+			cargando = false;
+		});
+		if (hayServidor())
+			imagenesDelLead(lead.id).then(
+				(lista) => {
+					enKommo = lista;
+					lista.forEach((a) => mostrar(a.uuid));
+				},
+				(e) => (avisoImagenes = e instanceof ErrorServidor && e.status === 503 ? "" : "No se pudieron leer las imágenes del lead en Kommo."),
+			);
+		return () => clearTimeout(esperaGuardar);
+	});
 
 	let formEl: HTMLElement;
 	function ir(sec: Seccion) {
@@ -54,30 +90,44 @@
 	async function generar() {
 		if (bloqueantes.length) return ir(bloqueantes[0].sec);
 		generando = true;
-		errorGenerar = avisoIa = "";
-		const firma = JSON.stringify(d);
+		errorGenerar = avisoIa = avisoKommo = "";
 		try {
+			// 1. Número correlativo. Se conserva si se vuelve a generar el mismo invoice; "Restablecer" lo libera.
 			paso = 0;
+			if (!d.sinCliente && !d.numero) d.numero = await pedirNumero(lead.id);
+
+			// 2. IA: siempre se intenta; si falla, el invoice sale con el texto estándar.
+			paso = 1;
+			const firma = firmaDe(d);
 			if (!redaccionVigente) {
 				try {
 					const activas = CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ id: c.id, nombre: c.nombre, texto: textoClausula(c.id, d) }));
-					const texto = await redactar({ idioma: d.idioma, pieza: tituloPieza(d), vinetas: vinetas(d), notas: d.notas, instrucciones: d.instrucciones, clausulas: activas });
+					const texto = await redactar({ idioma: d.idioma, pieza: tituloPieza(d), vinetas: vinetas(d), notas: d.notas, instrucciones: d.instrucciones, clausulas: activas, etiquetas: d.idioma === "en" ? etiquetasInvoice(d) : [] });
 					redaccion = { para: firma, texto };
-					if (texto.descartadas.length) avisoIa = "La IA cambió alguna cifra, así que en esos bloques se dejó el texto original.";
+					if (texto.descartadas.length) avisoIa = "La IA cambió alguna cifra o fecha, así que en esos textos se dejó el original en español.";
 				} catch (e) {
-					// Sin IA el invoice sale igual, con el texto armado de los campos.
-					if (!(e instanceof ErrorServidor) || e.status !== 503) throw e;
-					avisoIa = d.idioma === "en" ? "La IA no está configurada: el texto sale en español." : "La IA no está configurada: se usó el texto estándar.";
+					console.warn("[invoice] IA:", e);
+					avisoIa = d.idioma === "en" ? "La IA no respondió: el invoice salió en español." : "La IA no respondió: se usó el texto estándar.";
 				}
 			}
-			paso = 1;
-			await tick(); // que la vista previa ya muestre la redacción antes de copiarla
-			const nombre = `${d.sinCliente ? "RJ-INV-borrador" : numeroFactura(d)}.pdf`;
-			const blob = await generarPdf(await htmlDelInvoice(articulo!), nombre);
+
+			// 3. PDF. Con cliente, el servidor lo registra y lo guarda en el campo "Invoice" del lead.
+			paso = 2;
+			await tick(); // que la vista previa ya muestre el número y la redacción antes de copiarla
+			const html = await htmlDelInvoice(articulo!);
+			let blob: Blob;
+			if (d.sinCliente) blob = await generarCotizacion(html);
+			else {
+				const r = await generarInvoice(d.numero, html, t.total, $state.snapshot(d));
+				blob = r.pdf;
+				if (r.kommo === "error") avisoKommo = `No se pudo guardar en el lead (${r.detalle || "Kommo no respondió"}). El PDF se descargó igual.`;
+				else if (r.kommo === "desactivado") avisoKommo = "El servidor no tiene configurado el campo Invoice de Kommo: el PDF solo se descargó.";
+			}
+			const nombre = `${d.sinCliente ? "cotizacion" : d.numero}.pdf`;
 			if (pdf) URL.revokeObjectURL(pdf.url);
 			pdf = { url: URL.createObjectURL(blob), nombre };
 			descargar();
-			generada = firma;
+			generada = JSON.stringify(d);
 		} catch (e) {
 			errorGenerar = e instanceof Error ? e.message : "No se pudo generar el invoice";
 		} finally {
@@ -89,18 +139,39 @@
 		if (pdf) Object.assign(document.createElement("a"), { href: pdf.url, download: pdf.nombre }).click();
 	}
 
+	// El borrador es compartido: restablecerlo lo borra para todos los asesores (y libera el número).
 	function restablecer() {
+		if (!confirm("¿Empezar este invoice de cero? Se borra el borrador del lead para todos, y al generar se asigna un número nuevo.")) return;
 		Object.assign(d, borradorInicial(lead));
+		redaccion = null;
 	}
 
-	function subir(e: Event) {
+	async function subir(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		for (const f of input.files ?? []) {
-			const id = `subida-${crypto.randomUUID()}`;
-			subidas.push({ id, url: URL.createObjectURL(f) });
-			d.imagenes.push(id);
-		}
+		const archivos = [...(input.files ?? [])];
 		input.value = "";
+		avisoImagenes = "";
+		for (const f of archivos) {
+			subiendo++;
+			try {
+				if (!hayServidor()) throw new ErrorServidor("sin servidor", 503);
+				const img = await subirImagen(lead.id, f);
+				enKommo = [...enKommo, img];
+				urls[img.uuid] = URL.createObjectURL(f);
+				d.imagenes.push(img.uuid);
+			} catch (err) {
+				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${f.name} a Kommo.`;
+				else {
+					// Sin Kommo en el servidor: la imagen sirve para este invoice, pero no queda guardada en el lead.
+					const id = `local-${crypto.randomUUID()}`;
+					locales.push({ id, url: URL.createObjectURL(f) });
+					d.imagenes.push(id);
+					avisoImagenes = "Kommo no está configurado en el servidor: las imágenes no quedan guardadas en el lead.";
+				}
+			} finally {
+				subiendo--;
+			}
+		}
 	}
 
 	let abiertas: string[] = $state([]);
@@ -179,6 +250,17 @@
 				<h1 class="text-base leading-tight font-bold text-slate-900">Invoice para el cliente</h1>
 				<p class="truncate text-xs text-slate-500">Lead #{lead.id} · {lead.nombre}</p>
 			</div>
+			{#if !cargando}
+				<p class="hidden items-center gap-1.5 text-xs sm:flex {guardado === 'local' ? 'text-amber-700' : 'text-slate-500'}" aria-live="polite" title="El borrador es del lead: lo retoma cualquier asesor">
+					{#if guardado === "guardando"}
+						Guardando…
+					{:else if guardado === "local"}
+						Sin conexión: guardado solo en este equipo
+					{:else}
+						<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>Borrador guardado en el lead
+					{/if}
+				</p>
+			{/if}
 			{#if onclose}
 				<button type="button" onclick={onclose} disabled={generando} class="grid size-8 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-rj-navy disabled:opacity-40" aria-label="Cerrar" title="Cerrar (el borrador queda guardado)">
 					<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12" /></svg>
@@ -193,7 +275,7 @@
 			{/each}
 		</div>
 
-		<div class="flex min-h-0 flex-1">
+		<div class="relative flex min-h-0 flex-1">
 			<!-- Índice de secciones -->
 			<nav class="hidden w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 px-3 py-5 xl:flex" aria-label="Secciones del invoice">
 				<ul class="space-y-0.5">
@@ -219,6 +301,9 @@
 			</nav>
 
 			<!-- Formulario -->
+			{#if cargando}
+				<div class="absolute inset-0 z-10 grid place-items-center bg-white/85 text-sm text-slate-500" aria-live="polite">Cargando el borrador del lead…</div>
+			{/if}
 			<div bind:this={formEl} class="relative min-h-0 flex-1 overflow-y-auto lg:max-w-[560px] lg:border-r lg:border-slate-200 {vista === 'form' ? '' : 'hidden lg:block'}">
 				{#snippet cliente()}
 					<div class="space-y-4">
@@ -238,7 +323,7 @@
 						<div class="grid gap-3 sm:grid-cols-2">
 							<div>
 								<span class={label}>Número de factura</span>
-								<p class="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600 tabular-nums">{d.sinCliente ? "Se asigna al tener cliente" : numeroFactura(d)}</p>
+								<p class="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600 tabular-nums">{d.sinCliente ? "Sin número (cotización)" : d.numero || "Se asigna al generar"}</p>
 							</div>
 							<div>
 								<label class={label} for="f-emision">Fecha de emisión</label>
@@ -280,7 +365,7 @@
 						</div>
 
 						<fieldset>
-							<legend class={label}>Metal</legend>
+							<legend class={label}>Metal {#if lead.producto?.metal}{@render kommo("Lead")}{/if}</legend>
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 								{#each METALES as m (m.id)}
 									<label class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors has-focus-visible:outline-2 has-focus-visible:outline-rj-navy {d.metal === m.id ? 'border-rj-navy bg-rj-navy-soft font-semibold text-rj-navy' : 'border-slate-300 hover:border-slate-400'}">
@@ -310,7 +395,7 @@
 						</fieldset>
 
 						<fieldset>
-							<legend class={label}>Piedras</legend>
+							<legend class={label}>Piedras {#if lead.producto?.piedra}{@render kommo("Lead")}{/if}</legend>
 							{#if d.piedras.length === 0}
 								<p class="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">La pieza es solo metal. Agrega una piedra si lleva alguna.</p>
 							{/if}
@@ -349,7 +434,7 @@
 
 						<div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:gap-6">
 							<div>
-								<label class={label} for="f-talla">Talla</label>
+								<label class={label} for="f-talla">Talla {#if lead.producto?.talla}{@render kommo("Lead")}{/if}</label>
 								<div class="flex items-center gap-3">
 									<input id="f-talla" class="{input} w-24" bind:value={d.talla} disabled={d.tallaPorConfirmar} placeholder="7" />
 									{@render check(d.tallaPorConfirmar, (v) => (d.tallaPorConfirmar = v), "Por confirmar")}
@@ -523,7 +608,7 @@
 							<label class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-rj-navy {sel ? 'border-rj-navy' : 'border-transparent hover:border-slate-300'}">
 								<input type="checkbox" checked={sel} onchange={() => alternar(a.id)} class="sr-only" />
 								<div class="aspect-square bg-slate-100">
-									<img src={a.url} alt="" class="size-full object-cover" />
+									{#if a.url}<img src={a.url} alt="" class="size-full object-cover" />{:else}<span class="grid size-full place-items-center text-[10px] text-slate-400">Cargando…</span>{/if}
 								</div>
 								<span class="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-full text-[11px] font-bold {sel ? 'bg-rj-navy text-white' : 'bg-white/80 text-transparent ring-1 ring-slate-300'}">
 									{sel ? d.imagenes.indexOf(a.id) + 1 : ""}
@@ -533,11 +618,12 @@
 						{/each}
 						<label class="grid aspect-square cursor-pointer place-items-center rounded-lg border-2 border-dashed border-slate-300 text-center text-xs text-slate-500 transition-colors hover:border-rj-navy hover:text-rj-navy has-focus-visible:outline-2 has-focus-visible:outline-rj-navy">
 							<input type="file" accept="image/*" multiple onchange={subir} class="sr-only" />
-							<span><svg class="mx-auto mb-1 size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" /></svg>Subir imagen</span>
+							<span><svg class="mx-auto mb-1 size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" /></svg>{subiendo ? "Subiendo…" : "Subir imagen"}</span>
 						</label>
 					</div>
+					{#if avisoImagenes}<p class="mt-2 text-xs text-amber-800">{avisoImagenes}</p>{/if}
 				{/snippet}
-				{@render seccion("imagenes", "Imágenes de referencia", "Sube renders o fotos de referencia. El número indica el orden en el invoice.", imagenes)}
+				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas quedan guardadas en el lead. El número indica el orden en el invoice.", imagenes)}
 
 				{#snippet condiciones()}
 					<div class="space-y-4">
@@ -645,8 +731,9 @@
 				{:else if listo && pdf}
 					<p class="flex flex-wrap items-center gap-x-2 text-emerald-700">
 						<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-						<span class="font-semibold">Descargaste {pdf.nombre}</span>
+						<span class="font-semibold">{d.sinCliente || avisoKommo ? `Descargaste ${pdf.nombre}` : `${d.numero} guardado en el lead y descargado`}</span>
 						<button type="button" onclick={descargar} class="font-medium text-rj-navy underline underline-offset-2">Descargar de nuevo</button>
+						{#if avisoKommo}<span class="basis-full text-xs text-amber-700">{avisoKommo}</span>{/if}
 						{#if avisoIa}<span class="basis-full text-xs text-amber-700">{avisoIa}</span>{/if}
 					</p>
 				{:else if bloqueantes.length}
@@ -663,8 +750,8 @@
 					<p class="text-slate-500">Todo listo. Total a pagar ahora: <b class="text-slate-800 tabular-nums">{money(t.ahora)}</b></p>
 				{/if}
 			</div>
-			<button type="button" onclick={restablecer} disabled={generando} class="ml-auto rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-rj-navy disabled:opacity-50">Restablecer</button>
-			<button type="button" onclick={generar} disabled={generando || !hayServidor()} aria-disabled={bloqueantes.length > 0} class="inline-flex items-center gap-2 rounded-md bg-rj-navy px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy active:scale-[.98] disabled:cursor-wait disabled:opacity-70 aria-disabled:bg-slate-400">
+			<button type="button" onclick={restablecer} disabled={generando || cargando} class="ml-auto rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-rj-navy disabled:opacity-50">Restablecer</button>
+			<button type="button" onclick={generar} disabled={generando || cargando || !hayServidor()} aria-disabled={bloqueantes.length > 0} class="inline-flex items-center gap-2 rounded-md bg-rj-navy px-4 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,transform] hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy active:scale-[.98] disabled:cursor-wait disabled:opacity-70 aria-disabled:bg-slate-400">
 				<svg class="size-4 text-rj-gold" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>
 				{generada && !listo ? "Generar de nuevo" : "Generar invoice"}
 			</button>

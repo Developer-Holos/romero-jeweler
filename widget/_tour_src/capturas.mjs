@@ -8,6 +8,7 @@ import { LEAD_ID } from "./kommo.mjs";
 
 // Borrador de muestra con todo lleno, para que las capturas cuenten la historia completa.
 const BORRADOR = {
+	numero: "RJ-2026-0001",
 	cliente: "Daniela Ortega",
 	email: "daniela.ortega@example.com",
 	emision: "2026-10-20",
@@ -91,7 +92,8 @@ export async function capturar({ origen, lang, dirSalida, dic = {}, listar = fal
 	await page.goto(`${origen}/ajustes?lang=${lang}`);
 	await listo();
 	await page.locator("#work-area-rjinvoice article").waitFor();
-	await page.locator('#work-area-rjinvoice [data-bloque="imagenes"] svg').first().screenshot({ path: archivo("render") });
+	// El anillo dibujado (Thumb.svelte, viewBox 120×90), no el ícono de arrastre del bloque.
+	await page.locator('#work-area-rjinvoice [data-bloque="imagenes"] svg[viewBox="0 0 120 90"]').first().screenshot({ path: archivo("render") });
 	await page.getByRole("tab", { name: "Estilo" }).click();
 	await alInicio();
 	await page.waitForTimeout(300);
@@ -102,7 +104,8 @@ export async function capturar({ origen, lang, dirSalida, dic = {}, listar = fal
 	await page.setViewportSize({ width: 780, height: Math.round(780 / PROPORCION) });
 	await page.goto(`${origen}/lead?lang=${lang}`);
 	await listo();
-	await page.evaluate(([clave, b]) => localStorage.setItem(clave, JSON.stringify(b)), [`rj-invoice-borrador-${LEAD_ID}`, BORRADOR]);
+	// El borrador vive en el servidor del widget (aquí, el falso de /srv).
+	await page.evaluate(([id, b]) => fetch(`/srv/borradores/${id}`, { method: "PUT", body: JSON.stringify(b), headers: { "Content-Type": "application/json" } }), [LEAD_ID, BORRADOR]);
 	await page.locator("#rj-invoice-abrir").waitFor();
 	await traducir();
 	await page.screenshot({ path: archivo("lead") });
@@ -112,6 +115,7 @@ export async function capturar({ origen, lang, dirSalida, dic = {}, listar = fal
 	await page.locator("#rj-invoice-abrir").click();
 	const ventana = page.locator("#rj-invoice-ventana");
 	await ventana.locator("#f-pieza").waitFor();
+	await ventana.getByText("Cargando el borrador del lead").waitFor({ state: "detached" });
 	await ventana.locator('input[type="file"]').setInputFiles(archivo("render"));
 	// Índice de secciones por posición: en inglés sus textos ya están traducidos. 0 Cliente · 1 Pieza · 2 Precio y pagos.
 	const seccion = (i) => ventana.locator("nav li button").nth(i).click();

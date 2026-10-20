@@ -6,6 +6,7 @@ export type Redaccion = {
 	titulo: string;
 	vinetas: string[];
 	clausulas: { id: string; nombre: string; texto: string }[];
+	etiquetas: { clave: string; texto: string }[];
 	descartadas: string[];
 };
 
@@ -29,7 +30,7 @@ async function pedir(ruta: string, init: RequestInit = {}) {
 	try {
 		res = await fetch(servidor.url + ruta, {
 			...init,
-			headers: { "X-Widget-Key": servidor.clave, ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
+			headers: { "X-Widget-Key": servidor.clave, ...(typeof init.body === "string" ? { "Content-Type": "application/json" } : {}), ...init.headers },
 		});
 	} catch {
 		throw new ErrorServidor("No hay conexión con el servidor del widget", 0);
@@ -49,12 +50,57 @@ export async function guardarPlantillaServidor(plantilla: unknown) {
 	await pedir("/plantilla", { method: "PUT", body: JSON.stringify(plantilla) });
 }
 
-export async function redactar(pedido: { idioma: "es" | "en"; pieza: string; vinetas: string[]; notas: string; instrucciones: string; clausulas: { id: string; nombre: string; texto: string }[] }): Promise<Redaccion> {
+export async function leerBorradorServidor(leadId: number): Promise<unknown | null> {
+	return (await (await pedir(`/borradores/${leadId}`)).json()).borrador;
+}
+
+export async function guardarBorradorServidor(leadId: number, borrador: unknown) {
+	await pedir(`/borradores/${leadId}`, { method: "PUT", body: JSON.stringify(borrador) });
+}
+
+type Texto = { clave?: string; id?: string; nombre?: string; texto: string };
+export async function redactar(pedido: { idioma: "es" | "en"; pieza: string; vinetas: string[]; notas: string; instrucciones: string; clausulas: Texto[]; etiquetas: Texto[] }): Promise<Redaccion> {
 	return (await pedir("/ia/redactar", { method: "POST", body: JSON.stringify(pedido) })).json();
 }
 
-export async function generarPdf(html: string, nombre: string): Promise<Blob> {
-	return (await pedir("/pdf", { method: "POST", body: JSON.stringify({ html, nombre }) })).blob();
+// Correlativo RJ-AAAA-NNNN. Se pide antes de armar el PDF porque va impreso en él.
+export async function pedirNumero(leadId: number): Promise<string> {
+	return (await (await pedir("/invoices/numero", { method: "POST", body: JSON.stringify({ lead_id: leadId }) })).json()).numero;
+}
+
+// `kommo`: si el PDF quedó en el campo "Invoice" del lead ("guardado"), si falló ("error") o si el
+// servidor no tiene Kommo configurado ("desactivado").
+export async function generarInvoice(numero: string, html: string, total: number, datos: unknown) {
+	const res = await pedir(`/invoices/${encodeURIComponent(numero)}/pdf`, { method: "POST", body: JSON.stringify({ html, total, datos }) });
+	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };
+}
+
+// Invoice "sin datos del cliente" (cotización): PDF sin número, no se registra ni se guarda en Kommo.
+export async function generarCotizacion(html: string): Promise<Blob> {
+	return (await pedir("/pdf", { method: "POST", body: JSON.stringify({ html }) })).blob();
+}
+
+// ─── Imágenes de referencia: viven en Kommo, como archivos del lead ──────
+export type ImagenKommo = { uuid: string; nombre: string };
+
+export async function imagenesDelLead(leadId: number): Promise<ImagenKommo[]> {
+	return (await (await pedir(`/leads/${leadId}/imagenes`)).json()).imagenes;
+}
+
+export async function subirImagen(leadId: number, archivo: File): Promise<ImagenKommo> {
+	return (await pedir(`/leads/${leadId}/imagenes`, { method: "POST", body: archivo, headers: { "Content-Type": archivo.type || "image/jpeg", "X-Nombre-Archivo": encodeURIComponent(archivo.name) } })).json();
+}
+
+// Las imágenes de Kommo pasan por el servidor (con la clave en el header), así que se piden con fetch
+// y se muestran como blob: URL. Se guardan para no pedirlas de nuevo.
+const urls = new Map<string, Promise<string>>();
+export function urlImagen(uuid: string) {
+	if (!urls.has(uuid)) {
+		const p = pedir(`/imagenes/${encodeURIComponent(uuid)}`).then(async (r) => URL.createObjectURL(await r.blob()));
+		p.catch(() => urls.delete(uuid));
+		urls.set(uuid, p);
+	}
+	return urls.get(uuid)!;
 }
 
 // Ancho de diseño de la vista previa; en el PDF se escala a una hoja carta (8.5 in = 816 px).
