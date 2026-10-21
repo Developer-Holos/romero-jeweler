@@ -17,7 +17,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 5 | Clave opcional (basta la URL), sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
-| 8 | Imágenes en Kommo | Hecho | API verificada con la cuenta real; adjuntos de chats sin resolver |
+| 8 | Imágenes en la pestaña "Imágenes de la pieza" del lead | Por verificar | Crear la pestaña y sus campos por API en la cuenta real; adjuntos de chats sin resolver |
 | 9 | Borrador en el servidor, por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
@@ -143,23 +143,28 @@ tope por clave, ver #5).
 
 ## 8. Imágenes de referencia
 
-**Decisión:** las imágenes viven en Kommo; el servidor no las guarda.
+**Decisión:** las imágenes viven en Kommo; el servidor no las guarda. **Actualización (2026-10-21):** van en una
+pestaña de campos del lead, **"Imágenes de la pieza"**, un campo de tipo archivo por imagen.
 
 **Hecho:**
-- Las que sube el asesor desde el widget se suben a Kommo Drive y se adjuntan al lead.
-- El widget muestra las imágenes que ya están adjuntas al lead (subidas desde el widget o a mano en Kommo) para
-  elegirlas.
-- El borrador guarda solo las referencias (uuid), y las imágenes pasan por el servidor porque Kommo Drive pide el
-  token.
-
-**Verificado el 2026-10-20** con la cuenta real (lead de prueba 407872): subir una imagen, adjuntarla al lead,
-listarla entre los archivos del lead y descargarla (mismos bytes). Kommo devuelve el nombre sin extensión; el tipo se
-reconoce por el metadato del archivo.
+- Al instalar el widget (y cada vez que se guardan sus ajustes) el widget le pide al servidor que prepare la
+  pestaña: si no existe, la crea con 3 campos archivo, **Imagen 1**, **Imagen 2** e **Imagen 3**
+  (`POST /kommo/instalar`, desde `onSave` en `widget/script.js`). No duplica nada si ya existe.
+- Cada foto que el asesor sube desde el invoice va al primer campo libre de esa pestaña en el lead. Si están todos
+  ocupados, el servidor crea "Imagen 4", "Imagen 5"… sin límite (los campos son de la cuenta: otros leads los
+  reusan). Si la pestaña no existía, la primera subida la crea igual.
+- El widget muestra las imágenes de esos campos, en orden, y también las que estén adjuntas como archivos del lead.
+- El borrador guarda solo las referencias (uuid); las imágenes pasan por el servidor porque Kommo Drive pide el token.
+- Probado de punta a punta contra el Kommo simulado: al instalar se crean los 3 campos; con 4 fotos aparece
+  "Imagen 4"; al reabrir el generador vuelven las 4.
 
 **Falta:**
+- **Verificar con la cuenta real** que la API permita crear la pestaña y los campos de tipo archivo (subir a Drive y
+  guardar en un campo archivo ya están verificados, #1). Hay que tener en cuenta que eso crea la pestaña y sus
+  campos en la cuenta de Romero.
 - Los adjuntos que el cliente manda por **WhatsApp o Instagram** no son archivos del lead en Kommo: no aparecen.
-  Para usarlos, el asesor los adjunta al lead o los sube desde el widget. Si hace falta leerlos directo del chat,
-  es otra investigación de la API.
+  Para usarlos, el asesor los sube desde el widget. Si hace falta leerlos directo del chat, es otra investigación
+  de la API.
 
 ## 9. Dónde vive el borrador
 

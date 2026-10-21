@@ -33,7 +33,9 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   se guarda en el campo **Invoice** del lead (Kommo Drive) y se descarga. Si Kommo falla, el PDF se descarga
   igual. Las decisiones y lo que falta verificar están en `docs/DECISIONES.md`.
 - El borrador de cada lead vive en el servidor (Postgres): lo retoma cualquier asesor. Gana el último guardado.
-- Las imágenes de referencia viven en Kommo como archivos del lead; el borrador guarda solo sus uuid.
+- Las imágenes de referencia viven en Kommo, en la pestaña **"Imágenes de la pieza"** del lead: un campo archivo
+  por imagen ("Imagen 1…N"). Al instalar (`onSave` → `POST /kommo/instalar`) se crean 3; si un lead los ocupa, el
+  servidor crea el siguiente. El borrador guarda solo sus uuid.
 - Los textos legales y valores por defecto están en la plantilla (`TEXTOS` / `VALORES` en `plantilla.svelte.ts`) y
   Romero los edita en la pestaña Textos del diseñador. No escribir textos legales en el código.
 - Los montos los calcula el widget; la IA nunca los cambia. El servidor descarta cualquier texto en el que la IA

@@ -283,7 +283,7 @@ export const DICCIONARIO = {
 	"Guardando…": "Saving…",
 	"Borrador guardado en el lead": "Draft saved to the lead",
 	"Lead": "Lead",
-	"Las imágenes del lead en Kommo. Las que subas quedan guardadas en el lead. El número indica el orden en el invoice.": "The lead's images in Kommo. Anything you upload is saved to the lead. The number sets their order on the invoice.",
+	"Las imágenes del lead en Kommo. Las que subas se guardan en la pestaña «Imágenes de la pieza» del lead. El número indica el orden en el invoice.": "The lead's images in Kommo. Anything you upload is saved to the lead's “Piece images” tab. The number sets their order on the invoice.",
 	"Se asigna al generar": "Assigned when generated",
 	"Toca un bloque para editarlo": "Click a block to edit it",
 	"Todo listo. Total a pagar ahora:": "All set. Amount due now:",

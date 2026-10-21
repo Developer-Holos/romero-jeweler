@@ -8,7 +8,7 @@ import type { Db } from "./db.ts";
 import { asignarNumero, buscarInvoice, guardarAjuste, guardarBorrador, leerAjuste, leerBorrador, marcarSubidoAKommo, registrarInvoice } from "./datos.ts";
 import { env } from "./env.ts";
 import { redactar, type PedidoRedaccion } from "./ia.ts";
-import { adjuntarALead, descargarArchivo, ErrorKommo, guardarEnCampo, imagenesDelLead, kommoConfigurado, subirArchivo } from "./kommo.ts";
+import { asegurarCamposImagenes, descargarArchivo, ErrorKommo, guardarEnCampo, guardarImagenEnLead, imagenesDelLead, kommoConfigurado, subirArchivo } from "./kommo.ts";
 import { htmlAPdf } from "./pdf.ts";
 
 const MB = 1024 * 1024;
@@ -161,12 +161,23 @@ export function crearApp(db: Db) {
 		}
 	});
 
-	// ─── Imágenes de referencia: viven en Kommo, como archivos del lead ──────
+	// ─── Imágenes de referencia: viven en Kommo, en la pestaña "Imágenes de la pieza" del lead ──────
 	const sinKommo = (c: Context) => c.json({ error: "Kommo no está configurado en el servidor" }, 503);
 	const errorKommo = (c: Context, e: unknown) => {
 		console.error("[kommo]", e);
 		return c.json({ error: "Kommo no respondió" }, 502);
 	};
+
+	// Al instalar el widget (onSave): la pestaña de imágenes con sus 3 campos. Se puede llamar las veces que sea.
+	app.post("/kommo/instalar", async (c) => {
+		if (!kommoConfigurado()) return sinKommo(c);
+		try {
+			const { grupo, campos } = await asegurarCamposImagenes();
+			return c.json({ pestana: grupo, campos: campos.map((x) => ({ id: x.id, nombre: x.name })) });
+		} catch (e) {
+			return errorKommo(c, e);
+		}
+	});
 
 	app.get("/leads/:lead/imagenes", async (c) => {
 		const id = leadId(c);
@@ -187,8 +198,8 @@ export function crearApp(db: Db) {
 		if (!kommoConfigurado()) return sinKommo(c);
 		try {
 			const archivo = await subirArchivo(new Uint8Array(await c.req.arrayBuffer()), nombre, tipo);
-			await adjuntarALead(id, archivo.uuid);
-			return c.json({ uuid: archivo.uuid, nombre });
+			const campo = await guardarImagenEnLead(id, archivo);
+			return c.json({ uuid: archivo.uuid, nombre, campo });
 		} catch (e) {
 			return errorKommo(c, e);
 		}

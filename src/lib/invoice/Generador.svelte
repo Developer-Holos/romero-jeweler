@@ -623,7 +623,7 @@
 					</div>
 					{#if avisoImagenes}<p class="mt-2 text-xs text-amber-800">{avisoImagenes}</p>{/if}
 				{/snippet}
-				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas quedan guardadas en el lead. El número indica el orden en el invoice.", imagenes)}
+				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas se guardan en la pestaña «Imágenes de la pieza» del lead. El número indica el orden en el invoice.", imagenes)}
 
 				{#snippet condiciones()}
 					<div class="space-y-4">

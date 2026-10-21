@@ -58,7 +58,11 @@ define(['jquery'], function ($) {
         self.waitForAdvancedSettingsForm();
         return true;
       },
-      onSave: function () { return true; },
+      // Kommo lo llama al instalar el widget y al guardar sus ajustes.
+      onSave: function () {
+        self.prepararKommo();
+        return true;
+      },
       destroy: function () {
         if (window.RJInvoiceApp) window.RJInvoiceApp.cerrarGenerador();
         if (desmontarDisenador) { desmontarDisenador(); desmontarDisenador = null; }
@@ -98,6 +102,20 @@ define(['jquery'], function ($) {
     this.servidor = function () {
       var settings = self.get_settings() || {};
       return { url: SERVIDOR_URL, clave: settings.widget_key || '' };
+    };
+
+    // Crea (si no existe) la pestaña "Imágenes de la pieza" de los leads con sus 3 campos archivo. Lo hace el
+    // servidor, con su token de Kommo; si falla, la primera foto que se suba la crea igual.
+    this.prepararKommo = function () {
+      var servidor = self.servidor();
+      $.ajax({
+        url: servidor.url + '/kommo/instalar',
+        method: 'POST',
+        dataType: 'json',
+        headers: servidor.clave ? { 'X-Widget-Key': servidor.clave } : {}
+      }).fail(function (xhr) {
+        console.warn('[rj-invoice] No se pudo preparar la pestaña de imágenes en Kommo (' + xhr.status + ').');
+      });
     };
 
     // ─── Tarjeta del lead ─────────────────────────────────────────────────────

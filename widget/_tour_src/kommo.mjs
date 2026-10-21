@@ -45,6 +45,7 @@ function pagina(lang, titulo, cuerpo, arranque) {
 	var q = new URLSearchParams(location.search);
 	window.define = function (deps, factory) {
 		var Widget = factory(jQuery), w = new Widget();
+		window.widget = w; // para disparar callbacks a mano (ej. widget.callbacks.onSave(), como al instalar)
 		w.get_settings = function () { return { path: "/widget", version: "tour", widget_code: "rjinvoice", widget_key: q.get("clave") || "" }; };
 		w.render_template = function (o) { jQuery("#widget_rjinvoice .widget_body").html(o.render || o.body || ""); };
 		jQuery.getJSON("/widget/i18n/${lang}.json", function (d) { w.i18n = function (k) { return d[k]; }; w.callbacks.init(); ${arranque} window.listo = true; });
@@ -81,6 +82,10 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 	const archivos = new Map();
 	const adjuntos = [];
 	const camposArchivo = [];
+	// Pestañas y campos de los leads, y lo que se guardó en los campos del lead (cada PATCH se suma).
+	const grupos = [];
+	const campos = [{ id: 133486, name: "Invoice", type: "file", group_id: null, sort: 1 }];
+	let valores = [];
 	let siguiente = 0;
 	const guardar = (nombre, tipo, datos) => {
 		const uuid = `uuid-${++siguiente}`;
@@ -97,8 +102,25 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 		const ruta = url.pathname;
 
 		// ─── API de Kommo (widget en el navegador y servidor real) ───
-		if (ruta === `/api/v4/leads/${LEAD_ID}` && req.method === "GET") return json({ ...lead, name: PAGINA[langPagina].lead });
-		if (ruta === `/api/v4/leads/${LEAD_ID}` && req.method === "PATCH") return (camposArchivo.push(JSON.parse((await leer(req)).toString())), json({ id: LEAD_ID }));
+		if (ruta === `/api/v4/leads/${LEAD_ID}` && req.method === "GET") return json({ ...lead, name: PAGINA[langPagina].lead, custom_fields_values: [...lead.custom_fields_values, ...valores] });
+		if (ruta === `/api/v4/leads/${LEAD_ID}` && req.method === "PATCH") {
+			const cambio = JSON.parse((await leer(req)).toString());
+			camposArchivo.push(cambio);
+			valores = [...valores.filter((v) => !cambio.custom_fields_values.some((n) => n.field_id === v.field_id)), ...cambio.custom_fields_values];
+			return json({ id: LEAD_ID });
+		}
+		if (ruta === "/api/v4/leads/custom_fields/groups" && req.method === "GET") return json({ _embedded: { custom_field_groups: grupos } });
+		if (ruta === "/api/v4/leads/custom_fields/groups" && req.method === "POST") {
+			const nuevos = JSON.parse((await leer(req)).toString()).map((g) => ({ id: `leads_${grupos.length + 1}`, name: g.name }));
+			grupos.push(...nuevos);
+			return json({ _embedded: { custom_field_groups: nuevos } });
+		}
+		if (ruta === "/api/v4/leads/custom_fields" && req.method === "GET") return json({ _embedded: { custom_fields: campos } });
+		if (ruta === "/api/v4/leads/custom_fields" && req.method === "POST") {
+			const nuevos = JSON.parse((await leer(req)).toString()).map((c, i) => ({ ...c, id: 140000 + campos.length + i }));
+			campos.push(...nuevos);
+			return json({ _embedded: { custom_fields: nuevos } });
+		}
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files` && req.method === "PUT") return (adjuntos.push(...JSON.parse((await leer(req)).toString()).map((f) => f.file_uuid)), json({}));
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files`) return adjuntos.length ? json({ _embedded: { files: adjuntos.map((u) => ({ file_uuid: u })) } }) : (res.writeHead(204), res.end());
 		if (ruta === "/api/v4/contacts/55") return json(contacto);
@@ -123,7 +145,13 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 			res.writeHead(200, { "Content-Type": a.tipo });
 			return res.end(a.datos);
 		}
-		if (ruta === "/kommo/estado") return json({ archivos: [...archivos].map(([uuid, a]) => ({ uuid, nombre: a.nombre, tipo: a.tipo, tamano: a.datos.length })), adjuntos, camposArchivo });
+		if (ruta === "/kommo/estado")
+			return json({
+				archivos: [...archivos].map(([uuid, a]) => ({ uuid, nombre: a.nombre, tipo: a.tipo, tamano: a.datos.length })),
+				adjuntos,
+				pestanas: grupos.map((g) => ({ ...g, campos: campos.filter((c) => c.group_id === g.id).map((c) => c.name) })),
+				valores: valores.map((v) => ({ campo: campos.find((c) => c.id === v.field_id)?.name, archivo: v.values[0].value.file_name })),
+			});
 
 		// ─── Servidor del widget falso (/srv), para el tour ───
 		if (ruta === "/srv/plantilla" && req.method === "GET") return json({ plantilla });
