@@ -104,17 +104,165 @@ define(['jquery'], function ($) {
       return { url: SERVIDOR_URL, clave: settings.widget_key || '' };
     };
 
-    // Crea (si no existe) la pestaña "Imágenes de la pieza" de los leads con sus 3 campos archivo. Lo hace el
-    // servidor, con su token de Kommo; si falla, la primera foto que se suba la crea igual.
-    this.prepararKommo = function () {
-      var servidor = self.servidor();
-      $.ajax({
-        url: servidor.url + '/kommo/instalar',
-        method: 'POST',
+    // ─── Pestañas y campos del lead en Kommo ───────────────────────────────────
+    // Los crea el widget con la API de Kommo y la sesión del usuario (como el widget "IA Campos y Bots"):
+    // busca por nombre y crea solo lo que falta, así que se puede llamar las veces que sea.
+    var PESTANA_ORDEN = 'Orden de producción';
+    var CAMPOS_ORDEN = [
+      { clave: 'orden', nombre: 'Order #', tipo: 'text' },
+      { clave: 'stuller', nombre: 'Stuller O.#', tipo: 'text' },
+      { clave: 'nivoda', nombre: 'Nivoda O.#', tipo: 'text' },
+      { clave: 'ancho', nombre: 'Width bottom', tipo: 'text' },
+      { clave: 'grosor', nombre: 'Thickness', tipo: 'text' },
+      { clave: 'peso', nombre: 'Est. Weight', tipo: 'text' },
+      { clave: 'cabeza', nombre: 'Head style', tipo: 'text' },
+      { clave: 'pdf', nombre: 'Orden de producción (PDF)', tipo: 'file' }
+    ];
+    var PESTANA_IMAGENES = 'Imágenes de la pieza';
+    var PREFIJO_IMAGEN = 'Imagen ';
+    var IMAGENES_INICIALES = 3;
+
+    // $.ajax a la API de Kommo. El rechazo es explícito: en jQuery 3 devolver un valor resolvería la promesa.
+    this.kommoApi = function (metodo, ruta, cuerpo) {
+      return $.ajax({
+        url: ruta,
+        method: metodo,
         dataType: 'json',
-        headers: servidor.clave ? { 'X-Widget-Key': servidor.clave } : {}
-      }).fail(function (xhr) {
-        console.warn('[rj-invoice] No se pudo preparar la pestaña de imágenes en Kommo (' + xhr.status + ').');
+        contentType: cuerpo ? 'application/json' : undefined,
+        data: cuerpo ? JSON.stringify(cuerpo) : undefined
+      }).then(function (d) { return d; }, function (xhr) {
+        var detalle = (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.title)) || ('Kommo respondió ' + xhr.status);
+        return $.Deferred().reject(detalle).promise();
+      });
+    };
+
+    this.todos = function (ruta, clave) {
+      var items = [];
+      function pagina(url) {
+        return self.kommoApi('GET', url).then(function (d) {
+          items = items.concat((d && d._embedded && d._embedded[clave]) || []);
+          var siguiente = d && d._links && d._links.next && d._links.next.href;
+          return siguiente ? pagina(siguiente) : items;
+        });
+      }
+      return pagina(ruta + '?limit=250');
+    };
+
+    this.asegurarPestana = function (nombre) {
+      return self.todos('/api/v4/leads/custom_fields/groups', 'custom_field_groups').then(function (grupos) {
+        var g = grupos.filter(function (x) { return x.name === nombre; })[0];
+        if (g) return g.id;
+        return self.kommoApi('POST', '/api/v4/leads/custom_fields/groups', [{ name: nombre, sort: 500 }])
+          .then(function (d) { return d._embedded.custom_field_groups[0].id; });
+      });
+    };
+
+    // `faltan(campos de la pestaña)` dice qué campos crear: [{ nombre, tipo }].
+    this.asegurarCampos = function (grupoId, faltan) {
+      return self.todos('/api/v4/leads/custom_fields', 'custom_fields').then(function (todos) {
+        var enPestana = todos.filter(function (c) { return c.group_id === grupoId; });
+        var nuevos = faltan(enPestana);
+        if (!nuevos.length) return enPestana;
+        var cuerpo = nuevos.map(function (c, i) { return { name: c.nombre, type: c.tipo, group_id: grupoId, sort: 500 + enPestana.length + i }; });
+        return self.kommoApi('POST', '/api/v4/leads/custom_fields', cuerpo)
+          .then(function (d) { return enPestana.concat(d._embedded.custom_fields); });
+      });
+    };
+
+    // { orden: id, stuller: id, …, pdf: id } de la pestaña "Orden de producción".
+    this.camposOrden = function () {
+      return self.asegurarPestana(PESTANA_ORDEN).then(function (grupoId) {
+        return self.asegurarCampos(grupoId, function (enPestana) {
+          return CAMPOS_ORDEN.filter(function (c) {
+            return !enPestana.some(function (x) { return x.name === c.nombre; });
+          });
+        });
+      }).then(function (campos) {
+        var ids = {};
+        CAMPOS_ORDEN.forEach(function (c) {
+          var campo = campos.filter(function (x) { return x.name === c.nombre; })[0];
+          if (campo) ids[c.clave] = campo.id;
+        });
+        return ids;
+      });
+    };
+
+    var numeroImagen = function (c) { return Number(c.name.slice(PREFIJO_IMAGEN.length)) || 0; };
+
+    // Campos "Imagen N" de la pestaña, al menos `cantidad`, ordenados.
+    this.camposImagenes = function (cantidad) {
+      return self.asegurarPestana(PESTANA_IMAGENES).then(function (grupoId) {
+        return self.asegurarCampos(grupoId, function (enPestana) {
+          var actuales = enPestana.filter(function (c) { return c.type === 'file' && c.name.indexOf(PREFIJO_IMAGEN) === 0; });
+          var ultimo = actuales.reduce(function (m, c) { return Math.max(m, numeroImagen(c)); }, 0);
+          var nuevos = [];
+          for (var n = actuales.length; n < cantidad; n++) nuevos.push({ nombre: PREFIJO_IMAGEN + (ultimo + nuevos.length + 1), tipo: 'file' });
+          return nuevos;
+        });
+      }).then(function (campos) {
+        return campos.filter(function (c) { return c.type === 'file' && c.name.indexOf(PREFIJO_IMAGEN) === 0; })
+          .sort(function (a, b) { return numeroImagen(a) - numeroImagen(b); });
+      });
+    };
+
+    var valorEn = function (lead, campoId) {
+      var c = (lead.custom_fields_values || []).filter(function (f) { return f.field_id === campoId; })[0];
+      return c && c.values && c.values[0] ? c.values[0].value : null;
+    };
+    var ocupado = function (lead, campoId) {
+      var v = valorEn(lead, campoId);
+      return !!(v && v.file_uuid && !v.is_deleted);
+    };
+
+    // Primer campo "Imagen N" libre del lead; si están todos ocupados, crea el siguiente.
+    this.campoImagenLibre = function (leadId) {
+      return $.when(self.camposImagenes(IMAGENES_INICIALES), self.kommoApi('GET', '/api/v4/leads/' + leadId)).then(function (campos, lead) {
+        var libre = campos.filter(function (c) { return !ocupado(lead, c.id); })[0];
+        if (libre) return { id: libre.id, nombre: libre.name };
+        return self.camposImagenes(campos.length + 1).then(function (todos) {
+          var nuevo = todos.filter(function (c) { return !ocupado(lead, c.id); })[0];
+          return { id: nuevo.id, nombre: nuevo.name };
+        });
+      });
+    };
+
+    // Valores de la pestaña "Orden de producción" del lead: { orden: '1146', ancho: '2mm', … }.
+    this.valoresOrden = function (leadId) {
+      return $.when(self.camposOrden(), self.kommoApi('GET', '/api/v4/leads/' + leadId)).then(function (ids, lead) {
+        var valores = {};
+        CAMPOS_ORDEN.forEach(function (c) {
+          if (c.tipo !== 'text' || !ids[c.clave]) return;
+          var v = valorEn(lead, ids[c.clave]);
+          valores[c.clave] = v == null ? '' : String(v);
+        });
+        return valores;
+      });
+    };
+
+    this.guardarValoresOrden = function (leadId, valores) {
+      return self.camposOrden().then(function (ids) {
+        var cuerpo = CAMPOS_ORDEN.filter(function (c) { return c.tipo === 'text' && ids[c.clave]; }).map(function (c) {
+          var v = String(valores[c.clave] || '').trim();
+          // Vacío: se borra el valor del campo en Kommo.
+          return { field_id: ids[c.clave], values: v ? [{ value: v }] : null };
+        });
+        return self.kommoApi('PATCH', '/api/v4/leads/' + leadId, { custom_fields_values: cuerpo }).then(function () { return ids; });
+      });
+    };
+
+    // Lo que la app (app.js) usa de Kommo. Devuelven promesas de jQuery, que la app espera con await.
+    this.kommo = function () {
+      return {
+        campoImagenLibre: self.campoImagenLibre,
+        valoresOrden: self.valoresOrden,
+        guardarValoresOrden: self.guardarValoresOrden
+      };
+    };
+
+    // Al instalar (y al guardar los ajustes): las dos pestañas con sus campos.
+    this.prepararKommo = function () {
+      $.when(self.camposOrden(), self.camposImagenes(IMAGENES_INICIALES)).fail(function (detalle) {
+        console.warn('[rj-invoice] No se pudieron crear las pestañas en Kommo: ' + detalle);
       });
     };
 
@@ -124,6 +272,7 @@ define(['jquery'], function ($) {
       return '<div id="' + ROOT_ID + '" class="rj-invoice">' +
         '<p class="rj-invoice__hint">' + self.esc(self.t('card_hint')) + '</p>' +
         '<button type="button" id="rj-invoice-abrir" class="rj-invoice__btn">' + self.esc(self.t('card_button')) + '</button>' +
+        '<button type="button" id="rj-invoice-orden" class="rj-invoice__btn rj-invoice__btn--secundario">' + self.esc(self.t('order_button')) + '</button>' +
         '<div id="rj-invoice-status" class="rj-invoice__status"></div>' +
       '</div>';
     };
@@ -136,7 +285,9 @@ define(['jquery'], function ($) {
       });
       setTimeout(function () {
         self.ensureMounted();
-        $(document).off('click.rjinvoice').on('click.rjinvoice', '#rj-invoice-abrir', self.abrir);
+        $(document).off('click.rjinvoice')
+          .on('click.rjinvoice', '#rj-invoice-abrir', function () { self.abrir('abrirGenerador', $(this)); })
+          .on('click.rjinvoice', '#rj-invoice-orden', function () { self.abrir('abrirOrden', $(this)); });
       }, 0);
     };
 
@@ -161,18 +312,19 @@ define(['jquery'], function ($) {
         .text(text || '');
     };
 
-    this.abrir = function () {
+    // `ventana`: abrirGenerador (invoice) o abrirOrden (orden de producción). Las dos usan el mismo borrador.
+    this.abrir = function (ventana, $btn) {
       var servidor = self.servidor();
       if (!servidor.url) {
         self.status(self.t('error_settings'), 'error');
         return;
       }
-      var $btn = $('#rj-invoice-abrir').prop('disabled', true);
+      $btn.prop('disabled', true);
       self.status(self.t('loading'), 'working');
       $.when(self.loadApp(), self.leadInfo())
         .done(function (app, lead) {
           self.status('');
-          app.abrirGenerador({ lead: lead, servidor: servidor });
+          app[ventana]({ lead: lead, servidor: servidor, kommo: self.kommo() });
         })
         .fail(function (msg) {
           self.status(typeof msg === 'string' ? msg : self.t('error_lead'), 'error');

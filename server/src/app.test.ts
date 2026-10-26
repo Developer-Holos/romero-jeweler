@@ -161,33 +161,40 @@ describe("invoice", () => {
 	});
 });
 
-describe("pestaña de imágenes", () => {
-	const nombres = () => kommo.campos.filter((c) => c.group_id === kommo.grupos.find((g) => g.name === "Imágenes de la pieza")?.id).map((c) => c.name);
-
-	it("al instalar crea la pestaña con 3 campos archivo, y no los duplica si se vuelve a instalar", async () => {
-		const r = await (await app.request("/kommo/instalar", { method: "POST", headers: W })).json();
-		assert.deepEqual(r.campos.map((c: { nombre: string }) => c.nombre), ["Imagen 1", "Imagen 2", "Imagen 3"]);
-		await app.request("/kommo/instalar", { method: "POST", headers: W });
-		assert.equal(kommo.grupos.length, 1);
-		assert.deepEqual(nombres(), ["Imagen 1", "Imagen 2", "Imagen 3"]);
-		assert.ok(kommo.campos.filter((c) => c.group_id).every((c) => c.type === "file"));
+describe("pestaña de imágenes (la crea el widget)", () => {
+	before(() => {
+		// Lo que el widget dejó creado en la cuenta: la pestaña y sus campos.
+		kommo.grupos.push({ id: "leads_img", name: "Imágenes de la pieza" });
+		kommo.campos.push(...[1, 2, 3].map((n) => ({ id: 900 + n, name: `Imagen ${n}`, type: "file", group_id: "leads_img" as string | null, sort: n })));
 	});
 
-	it("cada foto va al primer campo libre y, pasada la tercera, se crean campos nuevos", async () => {
+	it("guarda cada foto en el campo que indica el widget y las lista en orden", async () => {
 		const png = Buffer.from("89504e470d0a1a0a", "hex");
-		const subir = async (n: number, lead = 500) =>
-			(await app.request(`/leads/${lead}/imagenes`, { method: "POST", headers: { "X-Widget-Key": "clave-widget", "Content-Type": "image/png", "X-Nombre-Archivo": `foto${n}.png` }, body: png })).json();
-		const campos = [];
-		for (const n of [1, 2, 3, 4, 5]) campos.push((await subir(n)).campo);
-		assert.deepEqual(campos, ["Imagen 1", "Imagen 2", "Imagen 3", "Imagen 4", "Imagen 5"]);
-		assert.deepEqual(nombres(), ["Imagen 1", "Imagen 2", "Imagen 3", "Imagen 4", "Imagen 5"]);
-
-		// Otro lead reusa los campos que ya existen: no crea más.
-		assert.equal((await subir(6, 600)).campo, "Imagen 1");
-		assert.equal(nombres().length, 5);
-
+		for (const n of [2, 1]) {
+			const r = await (await app.request("/leads/500/imagenes", { method: "POST", headers: { ...W, "Content-Type": "image/png", "X-Nombre-Archivo": `foto${n}.png`, "X-Campo-Imagen": String(900 + n) }, body: png })).json();
+			assert.equal(r.campo, 900 + n);
+		}
+		assert.deepEqual(kommo.lead.get(500)?.map((v) => v.field_id).sort(), [901, 902]);
 		const { imagenes } = await (await app.request("/leads/500/imagenes", { headers: W })).json();
-		assert.deepEqual(imagenes.map((i: { nombre: string }) => i.nombre), ["foto1.png", "foto2.png", "foto3.png", "foto4.png", "foto5.png"]);
+		assert.deepEqual(imagenes.map((x: { nombre: string }) => x.nombre), ["foto1.png", "foto2.png"]);
+		assert.equal(kommo.campos.length, 4); // el servidor no creó campos
+	});
+});
+
+describe("orden de producción", () => {
+	it("genera el PDF y lo guarda en el campo que indica el widget", async () => {
+		const res = await app.request("/ordenes/pdf", { method: "POST", headers: W, body: JSON.stringify({ html: "<h1>Order Details</h1>", lead_id: 31337, campo_id: 950, nombre: "orden-1146.pdf" }) });
+		assert.equal(res.status, 200);
+		assert.equal(res.headers.get("X-Kommo-Estado"), "guardado");
+		const pdf = Buffer.from(await res.arrayBuffer());
+		assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
+		const valor = kommo.lead.get(31337)?.find((v) => v.field_id === 950)?.values[0].value;
+		assert.equal(valor?.file_name, "orden-1146.pdf");
+	});
+
+	it("sin campo, solo devuelve el PDF", async () => {
+		const res = await app.request("/ordenes/pdf", { method: "POST", headers: W, body: JSON.stringify({ html: "<p>x</p>" }) });
+		assert.equal(res.headers.get("X-Kommo-Estado"), "desactivado");
 	});
 });
 

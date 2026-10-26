@@ -17,6 +17,7 @@
     "loading": "Cargando…",
     "error_settings": "Falta configurar la URL del servidor en los ajustes del widget.",
     "error_app": "No se pudo cargar el generador de invoices. Recarga la página e intenta de nuevo.",
-    "error_lead": "No se pudieron leer los datos del lead."
+    "error_lead": "No se pudieron leer los datos del lead.",
+    "order_button": "Orden de producción"
   }
 }

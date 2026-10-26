@@ -146,6 +146,9 @@ export function borradorInicial(lead: Lead) {
 		// Valores por defecto de la plantilla (los edita Romero); en cada invoice se pueden cambiar.
 		params: { ...plantilla.valores },
 		instrucciones: "",
+
+		// Orden de producción: solo lo que el invoice no tiene (lo demás sale de los campos de arriba).
+		produccion: { orden: "", stuller: "", nivoda: "", ancho: "", grosor: "", peso: "", cabeza: "" },
 	};
 }
 
@@ -167,7 +170,7 @@ export function borradorEjemplo(): Borrador {
 function mezclar(base: Borrador, guardado: unknown): Borrador {
 	if (!guardado || typeof guardado !== "object") return base;
 	const g = guardado as Partial<Borrador>;
-	const d: Borrador = { ...base, ...g, params: { ...base.params, ...g.params }, clausulas: { ...base.clausulas, ...g.clausulas } };
+	const d: Borrador = { ...base, ...g, params: { ...base.params, ...g.params }, clausulas: { ...base.clausulas, ...g.clausulas }, produccion: { ...base.produccion, ...g.produccion } };
 	// Las imágenes que no llegaron a Kommo (subidas sin servidor) no sobreviven a cerrar la ventana.
 	d.imagenes = (d.imagenes ?? []).filter((id) => !id.startsWith("local-"));
 	siguienteId = Math.max(siguienteId, ...d.piedras.map((p) => p.id + 1), ...d.depositos.map((x) => x.id + 1));

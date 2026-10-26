@@ -51,6 +51,21 @@
   background: #262c66;
 }
 
+.rj-invoice__btn--secundario {
+  margin-top: 8px;
+  background: #fff;
+  color: #1c2150;
+  box-shadow: inset 0 0 0 1px rgba(28, 33, 80, 0.3);
+}
+
+.rj-invoice__btn--secundario::before {
+  display: none;
+}
+
+.rj-invoice__btn--secundario:hover {
+  background: #e8e9f1;
+}
+
 .rj-invoice__btn:focus-visible {
   outline: 2px solid #b08d57;
   outline-offset: 2px;

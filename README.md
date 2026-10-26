@@ -136,8 +136,8 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `POST /invoices/numero` | Asigna el correlativo `RJ-AAAA-NNNN` |
 | `POST /invoices/:numero/pdf` | HTML de la vista previa → PDF carta (Chromium); lo registra y lo guarda en el campo Invoice del lead |
 | `POST /pdf` | PDF de una cotización (sin número, no va a Kommo) |
-| `GET/POST /leads/:lead/imagenes`, `GET /imagenes/:uuid` | Imágenes de referencia, en la pestaña "Imágenes de la pieza" del lead (un campo archivo por imagen; se crean más si hacen falta) |
-| `POST /kommo/instalar` | Crea la pestaña "Imágenes de la pieza" con 3 campos archivo (lo llama el widget al instalarse) |
+| `GET/POST /leads/:lead/imagenes`, `GET /imagenes/:uuid` | Imágenes de referencia: cada una al campo "Imagen N" que indica el widget (`X-Campo-Imagen`) |
+| `POST /ordenes/pdf` | Orden de producción → PDF; con `campo_id`, lo guarda en el campo archivo de la pestaña "Orden de producción" |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
 
 Basta con la URL del servidor. Si se define `WIDGET_KEY`, todo menos `/salud` y `/admin` pide además el header

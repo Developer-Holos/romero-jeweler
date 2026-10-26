@@ -1,6 +1,6 @@
-// Archivos en Kommo: el PDF del invoice va al campo "Invoice" (tipo archivo) del lead y las imágenes de
-// referencia, a la pestaña "Imágenes de la pieza" del lead (un campo archivo por imagen, que se crean a medida
-// que hacen falta). Los archivos se suben a Kommo Drive.
+// Archivos en Kommo: el servidor sube a Kommo Drive y guarda el archivo en el campo archivo que corresponda:
+// el PDF del invoice en "Invoice", el de la orden en su campo de la pestaña "Orden de producción", y cada imagen
+// en un campo de la pestaña "Imágenes de la pieza". Las pestañas y los campos los crea el widget, no el servidor.
 //
 // Drive y el campo archivo están verificados con la cuenta real (docs/DECISIONES.md, #1 y #8). Endpoints de la
 // API v4 de Kommo:
@@ -69,14 +69,17 @@ export async function guardarEnCampo(leadId: number, campoId: number, archivo: A
 	);
 }
 
-// ─── Pestaña de imágenes del lead ───────────────────────────────────────────
-// Al instalar el widget se crea la pestaña con 3 campos archivo (Imagen 1…3). Si un lead ya los tiene
-// ocupados, la próxima imagen crea "Imagen 4", "Imagen 5"…: no hay límite.
-export const PESTANA_IMAGENES = "Imágenes de la pieza";
-const PREFIJO_CAMPO = "Imagen ";
-export const CAMPOS_INICIALES = 3;
+export async function adjuntarALead(leadId: number, uuid: string) {
+	await api(`/api/v4/leads/${leadId}/files`, json({ method: "PUT", cuerpo: [{ file_uuid: uuid }] }));
+}
 
-type Campo = { id: number; name: string; type: string; group_id: string | null; sort: number };
+// ─── Pestaña de imágenes del lead ───────────────────────────────────────────
+// La pestaña "Imágenes de la pieza" y sus campos "Imagen N" los crea el WIDGET (widget/script.js), con la sesión
+// de Kommo del usuario. El servidor solo los lee, para listar las imágenes del lead.
+const PESTANA_IMAGENES = "Imágenes de la pieza";
+const PREFIJO_CAMPO = "Imagen ";
+
+type Campo = { id: number; name: string; type: string; group_id: string | null };
 type Grupo = { id: string; name: string };
 
 async function todos<T>(ruta: string, clave: string): Promise<T[]> {
@@ -91,43 +94,18 @@ async function todos<T>(ruta: string, clave: string): Promise<T[]> {
 	return items;
 }
 
-const numeroDe = (c: Campo) => Number(c.name.slice(PREFIJO_CAMPO.length)) || 0;
-
-// Crear campos va en serie: dos subidas a la vez no deben crear dos "Imagen 4".
-let enCurso: Promise<unknown> = Promise.resolve();
-const enSerie = <T>(fn: () => Promise<T>): Promise<T> => {
-	const r = enCurso.then(fn, fn);
-	enCurso = r.catch(() => {});
-	return r;
-};
-
-// La pestaña y al menos `cantidad` campos "Imagen N" (tipo archivo), ordenados por número. Se recuerda un
-// minuto, porque el listado de imágenes la consulta cada vez que se abre el generador.
-let recordado: { hasta: number; grupo: string; campos: Campo[] } | null = null;
-export function asegurarCamposImagenes(cantidad = CAMPOS_INICIALES): Promise<{ grupo: string; campos: Campo[] }> {
-	return enSerie(async () => {
-		if (recordado && recordado.hasta > Date.now() && recordado.campos.length >= cantidad) return recordado;
-		const grupos = await todos<Grupo>("/api/v4/leads/custom_fields/groups", "custom_field_groups");
-		let grupo = grupos.find((g) => g.name === PESTANA_IMAGENES)?.id;
-		if (!grupo) {
-			const res = await api("/api/v4/leads/custom_fields/groups", json({ method: "POST", cuerpo: [{ name: PESTANA_IMAGENES, sort: 100 }] }));
-			grupo = ((await res.json()) as { _embedded: { custom_field_groups: Grupo[] } })._embedded.custom_field_groups[0].id;
-		}
-		const enGrupo = (await todos<Campo>("/api/v4/leads/custom_fields", "custom_fields"))
-			.filter((c) => c.group_id === grupo && c.type === "file" && c.name.startsWith(PREFIJO_CAMPO))
-			.sort((a, b) => numeroDe(a) - numeroDe(b));
-		const ultimo = enGrupo.length ? numeroDe(enGrupo.at(-1)!) : 0;
-		const faltan = Array.from({ length: Math.max(0, cantidad - enGrupo.length) }, (_, i) => ultimo + i + 1);
-		if (faltan.length) {
-			const res = await api(
-				"/api/v4/leads/custom_fields",
-				json({ method: "POST", cuerpo: faltan.map((n) => ({ name: `${PREFIJO_CAMPO}${n}`, type: "file", group_id: grupo, sort: 100 + n })) }),
-			);
-			enGrupo.push(...((await res.json()) as { _embedded: { custom_fields: Campo[] } })._embedded.custom_fields);
-		}
-		recordado = { hasta: Date.now() + 60_000, grupo, campos: enGrupo };
-		return recordado;
-	});
+// Se recuerda un minuto: el listado se pide cada vez que se abre el generador.
+let recordado: { hasta: number; campos: Campo[] } | null = null;
+async function camposImagenes(): Promise<Campo[]> {
+	if (recordado && recordado.hasta > Date.now()) return recordado.campos;
+	const grupo = (await todos<Grupo>("/api/v4/leads/custom_fields/groups", "custom_field_groups")).find((g) => g.name === PESTANA_IMAGENES)?.id;
+	const campos = grupo
+		? (await todos<Campo>("/api/v4/leads/custom_fields", "custom_fields"))
+				.filter((c) => c.group_id === grupo && c.type === "file" && c.name.startsWith(PREFIJO_CAMPO))
+				.sort((a, b) => Number(a.name.slice(PREFIJO_CAMPO.length)) - Number(b.name.slice(PREFIJO_CAMPO.length)))
+		: [];
+	recordado = { hasta: Date.now() + 60_000, campos };
+	return campos;
 }
 
 type ValorArchivo = { file_uuid: string; file_name?: string; is_deleted?: boolean };
@@ -137,19 +115,6 @@ const archivoEn = (lead: ValoresLead, campoId: number) => {
 	const v = lead.custom_fields_values?.find((c) => c.field_id === campoId)?.values?.[0]?.value;
 	return v?.file_uuid && !v.is_deleted ? v : null;
 };
-
-// La imagen va al primer campo libre de la pestaña en ese lead; si están todos ocupados, se crea uno más.
-export async function guardarImagenEnLead(leadId: number, archivo: ArchivoKommo) {
-	let { campos } = await asegurarCamposImagenes();
-	const lead = (await (await api(`/api/v4/leads/${leadId}`)).json()) as ValoresLead;
-	let libre = campos.find((c) => !archivoEn(lead, c.id));
-	if (!libre) {
-		({ campos } = await asegurarCamposImagenes(campos.length + 1));
-		libre = campos.find((c) => !archivoEn(lead, c.id))!;
-	}
-	await guardarEnCampo(leadId, libre.id, archivo);
-	return libre.name;
-}
 
 type InfoDrive = { uuid: string; name: string; metadata?: { mime_type?: string; extension?: string }; _links?: { download?: { href: string } } };
 
@@ -162,8 +127,8 @@ const esImagen = (info: InfoDrive) => /^image\//.test(info.metadata?.mime_type ?
 // Imágenes del lead: las de la pestaña "Imágenes de la pieza" (en orden) y, después, las que estén adjuntas
 // como archivos del lead (subidas a mano en Kommo o con versiones anteriores del widget).
 export async function imagenesDelLead(leadId: number) {
-	const [{ campos }, lead, adjuntos] = await Promise.all([
-		asegurarCamposImagenes(),
+	const [campos, lead, adjuntos] = await Promise.all([
+		camposImagenes(),
 		api(`/api/v4/leads/${leadId}`).then((r) => r.json() as Promise<ValoresLead>),
 		api(`/api/v4/leads/${leadId}/files`).then(async (r) => (r.status === 204 ? [] : (((await r.json()) as { _embedded?: { files?: { file_uuid: string }[] } })._embedded?.files ?? []))),
 	]);

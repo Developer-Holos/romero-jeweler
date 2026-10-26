@@ -150,7 +150,10 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 				archivos: [...archivos].map(([uuid, a]) => ({ uuid, nombre: a.nombre, tipo: a.tipo, tamano: a.datos.length })),
 				adjuntos,
 				pestanas: grupos.map((g) => ({ ...g, campos: campos.filter((c) => c.group_id === g.id).map((c) => c.name) })),
-				valores: valores.map((v) => ({ campo: campos.find((c) => c.id === v.field_id)?.name, archivo: v.values[0].value.file_name })),
+				valores: valores.map((v) => {
+					const valor = v.values?.[0]?.value;
+					return { campo: campos.find((c) => c.id === v.field_id)?.name, valor: valor?.file_name ?? valor ?? null };
+				}),
 			});
 
 		// ─── Servidor del widget falso (/srv), para el tour ───

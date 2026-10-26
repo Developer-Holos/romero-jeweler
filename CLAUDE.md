@@ -11,7 +11,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 | Pieza | Dónde | Qué hace |
 | --- | --- | --- |
 | Tracking de pedidos | `src/routes/orders/[lead_id]`, `src/lib/kommo`, `src/lib/tracking` | Página pública con la etapa de producción del pedido, leída de Kommo |
-| Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices (tarjeta del lead) y editor del diseño (ajustes avanzados) |
+| Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices y de órdenes de producción (tarjeta del lead) y editor del diseño (ajustes avanzados) |
 | Servidor del widget | `server/` | API externa que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
 
 ## Arquitectura del widget de invoice
@@ -33,9 +33,17 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   se guarda en el campo **Invoice** del lead (Kommo Drive) y se descarga. Si Kommo falla, el PDF se descarga
   igual. Las decisiones y lo que falta verificar están en `docs/DECISIONES.md`.
 - El borrador de cada lead vive en el servidor (Postgres): lo retoma cualquier asesor. Gana el último guardado.
-- Las imágenes de referencia viven en Kommo, en la pestaña **"Imágenes de la pieza"** del lead: un campo archivo
-  por imagen ("Imagen 1…N"). Al instalar (`onSave` → `POST /kommo/instalar`) se crean 3; si un lead los ocupa, el
-  servidor crea el siguiente. El borrador guarda solo sus uuid.
+- **Las pestañas y campos del lead los crea el widget, no el servidor** (`widget/script.js`, con `$.ajax` a `/api/v4`
+  y la sesión del usuario, igual que el widget "IA Campos y Bots"): busca por nombre y crea solo lo que falta. Se
+  crean al instalar (`onSave`) y, si faltan, al usarlas. El servidor solo sube archivos a Drive y los guarda en el
+  campo que el widget le indica.
+- Las imágenes de referencia van en la pestaña **"Imágenes de la pieza"**: un campo archivo por imagen ("Imagen 1…N").
+  Empiezan 3; si un lead los ocupa, el widget crea el siguiente. El borrador guarda solo sus uuid.
+- **Orden de producción** (`OrdenProduccion.svelte` + `OrdenPreview.svelte`, botón aparte en la tarjeta del lead):
+  sale del **mismo borrador que el invoice** (cliente, pieza, pagos, imágenes) con el formato de la ficha de
+  producción de Romero (orden 1146). Lo que el invoice no tiene (Order #, Stuller O.#, Nivoda O.#, Width bottom,
+  Thickness, Est. Weight, Head style) se guarda en la pestaña **"Orden de producción"** del lead, con el PDF en su
+  campo archivo. Si esos campos se cambian a mano en Kommo, la orden los toma al abrirse.
 - Los textos legales y valores por defecto están en la plantilla (`TEXTOS` / `VALORES` en `plantilla.svelte.ts`) y
   Romero los edita en la pestaña Textos del diseñador. No escribir textos legales en el código.
 - Los montos los calcula el widget; la IA nunca los cambia. El servidor descarta cualquier texto en el que la IA

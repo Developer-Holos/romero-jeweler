@@ -18,6 +18,14 @@ export function configurarServidor(url: string | undefined, clave: string | unde
 
 export const hayServidor = () => !!servidor.url;
 
+// Lo que el widget de Kommo (widget/script.js) hace con la API de Kommo y la sesión del usuario: crear las
+// pestañas y campos del lead, y leer o escribir sus valores. Fuera de Kommo no existe.
+export type Kommo = {
+	campoImagenLibre(leadId: number): PromiseLike<{ id: number; nombre: string }>;
+	valoresOrden(leadId: number): PromiseLike<Record<string, string>>;
+	guardarValoresOrden(leadId: number, valores: Record<string, string>): PromiseLike<Record<string, number>>;
+};
+
 export class ErrorServidor extends Error {
 	constructor(mensaje: string, readonly status: number) {
 		super(mensaje);
@@ -75,6 +83,12 @@ export async function generarInvoice(numero: string, html: string, total: number
 	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };
 }
 
+// Orden de producción: con `campoId`, el servidor guarda el PDF en ese campo del lead (pestaña "Orden de producción").
+export async function generarOrden(html: string, nombre: string, leadId?: number, campoId?: number) {
+	const res = await pedir("/ordenes/pdf", { method: "POST", body: JSON.stringify({ html, nombre, lead_id: leadId, campo_id: campoId }) });
+	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };
+}
+
 // Invoice "sin datos del cliente" (cotización): PDF sin número, no se registra ni se guarda en Kommo.
 export async function generarCotizacion(html: string): Promise<Blob> {
 	return (await pedir("/pdf", { method: "POST", body: JSON.stringify({ html }) })).blob();
@@ -87,8 +101,11 @@ export async function imagenesDelLead(leadId: number): Promise<ImagenKommo[]> {
 	return (await (await pedir(`/leads/${leadId}/imagenes`)).json()).imagenes;
 }
 
-export async function subirImagen(leadId: number, archivo: File): Promise<ImagenKommo> {
-	return (await pedir(`/leads/${leadId}/imagenes`, { method: "POST", body: archivo, headers: { "Content-Type": archivo.type || "image/jpeg", "X-Nombre-Archivo": encodeURIComponent(archivo.name) } })).json();
+// `campoId`: campo "Imagen N" del lead donde guardarla (lo elige el widget); sin él, se adjunta al lead.
+export async function subirImagen(leadId: number, archivo: File, campoId?: number): Promise<ImagenKommo> {
+	const headers: Record<string, string> = { "Content-Type": archivo.type || "image/jpeg", "X-Nombre-Archivo": encodeURIComponent(archivo.name) };
+	if (campoId) headers["X-Campo-Imagen"] = String(campoId);
+	return (await pedir(`/leads/${leadId}/imagenes`, { method: "POST", body: archivo, headers })).json();
 }
 
 // Las imágenes de Kommo pasan por el servidor (con la clave en el header), así que se piden con fetch

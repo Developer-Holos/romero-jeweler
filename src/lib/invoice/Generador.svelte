@@ -2,11 +2,12 @@
 	import { CLAUSULAS, CORTES, etiquetasInvoice, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, pendientes, textoClausula, totales, type Borrador, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
 	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
-	import { ErrorServidor, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Redaccion } from "./servidor";
+	import { ErrorServidor, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
 	import { onMount, tick, untrack } from "svelte";
 
 	// `flotante`: ventana sobre la tarjeta del lead en Kommo. `disenoHref`: enlace al editor del diseño, si lo hay.
-	let { lead, onclose, flotante = false, disenoHref }: { lead: Lead; onclose?: () => void; flotante?: boolean; disenoHref?: string } = $props();
+	// `kommo`: lo que el widget hace con la API de Kommo (elegir o crear el campo de cada imagen); fuera de Kommo no está.
+	let { lead, onclose, flotante = false, disenoHref, kommo }: { lead: Lead; onclose?: () => void; flotante?: boolean; disenoHref?: string; kommo?: Kommo } = $props();
 
 	// El borrador de cada lead vive en el servidor: cualquier asesor lo retoma desde cualquier equipo.
 	// Mientras carga, el formulario no se muestra (el borrador en memoria puede ser de otro lead).
@@ -155,7 +156,9 @@
 			subiendo++;
 			try {
 				if (!hayServidor()) throw new ErrorServidor("sin servidor", 503);
-				const img = await subirImagen(lead.id, f);
+				// Cada imagen va a un campo "Imagen N" de la pestaña "Imágenes de la pieza" (el widget lo crea si falta).
+				const campo = kommo ? await kommo.campoImagenLibre(lead.id) : undefined;
+				const img = await subirImagen(lead.id, f, campo?.id);
 				enKommo = [...enKommo, img];
 				urls[img.uuid] = URL.createObjectURL(f);
 				d.imagenes.push(img.uuid);
@@ -218,7 +221,7 @@
 
 <svelte:window onkeydown={(e) => flotante && e.key === "Escape" && !generando && onclose?.()} />
 
-{#snippet kommo(texto = "Kommo")}
+{#snippet etiquetaKommo(texto = "Kommo")}
 	<span class="ml-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-px text-[10px] font-semibold text-sky-700 ring-1 ring-sky-200" title="Dato tomado del lead en Kommo">
 		<svg class="size-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6" /></svg>{texto}
 	</span>
@@ -311,11 +314,11 @@
 						{#if !d.sinCliente}
 							<div class="grid gap-3 sm:grid-cols-2">
 								<div>
-									<label class={label} for="f-cliente">Facturado a {#if d.cliente === lead.contacto}{@render kommo("Contacto")}{/if}</label>
+									<label class={label} for="f-cliente">Facturado a {#if d.cliente === lead.contacto}{@render etiquetaKommo("Contacto")}{/if}</label>
 									<input id="f-cliente" class={input} bind:value={d.cliente} placeholder="Nombre y apellido" />
 								</div>
 								<div>
-									<label class={label} for="f-email">Correo del cliente {#if d.email === lead.email}{@render kommo("Contacto")}{/if}</label>
+									<label class={label} for="f-email">Correo del cliente {#if d.email === lead.email}{@render etiquetaKommo("Contacto")}{/if}</label>
 									<input id="f-email" type="email" class={input} bind:value={d.email} placeholder="cliente@correo.com" />
 								</div>
 							</div>
@@ -330,7 +333,7 @@
 								<input id="f-emision" type="date" class={input} bind:value={d.emision} />
 							</div>
 							<div>
-								<label class={label} for="f-prep">Preparado por {#if d.preparadoPor === lead.responsable}{@render kommo("Responsable")}{/if}</label>
+								<label class={label} for="f-prep">Preparado por {#if d.preparadoPor === lead.responsable}{@render etiquetaKommo("Responsable")}{/if}</label>
 								<input id="f-prep" class={input} bind:value={d.preparadoPor} />
 							</div>
 							<div class="sm:col-span-2">
@@ -365,7 +368,7 @@
 						</div>
 
 						<fieldset>
-							<legend class={label}>Metal {#if lead.producto?.metal}{@render kommo("Lead")}{/if}</legend>
+							<legend class={label}>Metal {#if lead.producto?.metal}{@render etiquetaKommo("Lead")}{/if}</legend>
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 								{#each METALES as m (m.id)}
 									<label class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors has-focus-visible:outline-2 has-focus-visible:outline-rj-navy {d.metal === m.id ? 'border-rj-navy bg-rj-navy-soft font-semibold text-rj-navy' : 'border-slate-300 hover:border-slate-400'}">
@@ -395,7 +398,7 @@
 						</fieldset>
 
 						<fieldset>
-							<legend class={label}>Piedras {#if lead.producto?.piedra}{@render kommo("Lead")}{/if}</legend>
+							<legend class={label}>Piedras {#if lead.producto?.piedra}{@render etiquetaKommo("Lead")}{/if}</legend>
 							{#if d.piedras.length === 0}
 								<p class="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">La pieza es solo metal. Agrega una piedra si lleva alguna.</p>
 							{/if}
@@ -434,7 +437,7 @@
 
 						<div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:gap-6">
 							<div>
-								<label class={label} for="f-talla">Talla {#if lead.producto?.talla}{@render kommo("Lead")}{/if}</label>
+								<label class={label} for="f-talla">Talla {#if lead.producto?.talla}{@render etiquetaKommo("Lead")}{/if}</label>
 								<div class="flex items-center gap-3">
 									<input id="f-talla" class="{input} w-24" bind:value={d.talla} disabled={d.tallaPorConfirmar} placeholder="7" />
 									{@render check(d.tallaPorConfirmar, (v) => (d.tallaPorConfirmar = v), "Por confirmar")}
@@ -461,7 +464,7 @@
 					<div class="space-y-5">
 						<div class="grid gap-3 sm:grid-cols-2">
 							<div>
-								<label class={label} for="f-valor">Valor de la pieza {#if d.valor === lead.presupuesto}{@render kommo("Presupuesto")}{/if}</label>
+								<label class={label} for="f-valor">Valor de la pieza {#if d.valor === lead.presupuesto}{@render etiquetaKommo("Presupuesto")}{/if}</label>
 								<div class="relative">
 									<span class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-400">$</span>
 									<input id="f-valor" type="number" min="0" step="10" class="{input} pl-6 tabular-nums" bind:value={d.valor} />

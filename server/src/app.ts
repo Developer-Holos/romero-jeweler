@@ -8,7 +8,7 @@ import type { Db } from "./db.ts";
 import { asignarNumero, buscarInvoice, guardarAjuste, guardarBorrador, leerAjuste, leerBorrador, marcarSubidoAKommo, registrarInvoice } from "./datos.ts";
 import { env } from "./env.ts";
 import { redactar, type PedidoRedaccion } from "./ia.ts";
-import { asegurarCamposImagenes, descargarArchivo, ErrorKommo, guardarEnCampo, guardarImagenEnLead, imagenesDelLead, kommoConfigurado, subirArchivo } from "./kommo.ts";
+import { adjuntarALead, descargarArchivo, ErrorKommo, guardarEnCampo, imagenesDelLead, kommoConfigurado, subirArchivo } from "./kommo.ts";
 import { htmlAPdf } from "./pdf.ts";
 
 const MB = 1024 * 1024;
@@ -36,7 +36,7 @@ export function crearApp(db: Db) {
 		"*",
 		cors({
 			origin: (o) => (env.ORIGENES.includes(o) ? o : null),
-			allowHeaders: ["X-Widget-Key", "Content-Type", "X-Nombre-Archivo"],
+			allowHeaders: ["X-Widget-Key", "Content-Type", "X-Nombre-Archivo", "X-Campo-Imagen"],
 			allowMethods: ["GET", "PUT", "POST"],
 			exposeHeaders: ["X-Kommo-Estado", "X-Kommo-Detalle"],
 			maxAge: 600,
@@ -149,6 +149,34 @@ export function crearApp(db: Db) {
 		});
 	});
 
+	// Orden de producción: PDF al campo archivo de la pestaña "Orden de producción" (el widget manda su id).
+	// Si Kommo falla, el PDF se devuelve igual y X-Kommo-Estado lo avisa.
+	app.post("/ordenes/pdf", bodyLimit({ maxSize: 20 * MB }), async (c) => {
+		const { html, lead_id, campo_id, nombre } = (await c.req.json().catch(() => ({}))) as { html?: unknown; lead_id?: unknown; campo_id?: unknown; nombre?: unknown };
+		if (typeof html !== "string" || !html.includes("<")) return c.json({ error: "Falta el HTML de la orden" }, 400);
+		const archivoNombre = typeof nombre === "string" && /^[\w.-]{1,80}\.pdf$/.test(nombre) ? nombre : "orden.pdf";
+		let pdf: Uint8Array;
+		try {
+			pdf = await htmlAPdf(html);
+		} catch (e) {
+			console.error("[pdf]", e);
+			return c.json({ error: "No se pudo generar el PDF" }, 500);
+		}
+		let estado = "desactivado";
+		let detalle = "";
+		if (kommoConfigurado() && Number.isSafeInteger(lead_id) && Number.isSafeInteger(campo_id)) {
+			try {
+				await guardarEnCampo(lead_id as number, campo_id as number, await subirArchivo(pdf, archivoNombre, "application/pdf"));
+				estado = "guardado";
+			} catch (e) {
+				console.error(`[kommo] orden del lead ${lead_id}:`, e);
+				estado = "error";
+				detalle = e instanceof ErrorKommo ? `Kommo respondió ${e.status}` : "No se pudo subir a Kommo";
+			}
+		}
+		return c.body(pdf as Uint8Array<ArrayBuffer>, 200, { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${archivoNombre}"`, "X-Kommo-Estado": estado, "X-Kommo-Detalle": detalle });
+	});
+
 	// Invoice "sin datos del cliente" (cotización): PDF sin número, no se registra ni va a Kommo.
 	app.post("/pdf", bodyLimit({ maxSize: 20 * MB }), async (c) => {
 		const { html } = (await c.req.json().catch(() => ({}))) as { html?: unknown };
@@ -162,22 +190,12 @@ export function crearApp(db: Db) {
 	});
 
 	// ─── Imágenes de referencia: viven en Kommo, en la pestaña "Imágenes de la pieza" del lead ──────
+	// El widget elige (o crea) el campo libre y lo manda en X-Campo-Imagen; sin él, la imagen se adjunta al lead.
 	const sinKommo = (c: Context) => c.json({ error: "Kommo no está configurado en el servidor" }, 503);
 	const errorKommo = (c: Context, e: unknown) => {
 		console.error("[kommo]", e);
 		return c.json({ error: "Kommo no respondió" }, 502);
 	};
-
-	// Al instalar el widget (onSave): la pestaña de imágenes con sus 3 campos. Se puede llamar las veces que sea.
-	app.post("/kommo/instalar", async (c) => {
-		if (!kommoConfigurado()) return sinKommo(c);
-		try {
-			const { grupo, campos } = await asegurarCamposImagenes();
-			return c.json({ pestana: grupo, campos: campos.map((x) => ({ id: x.id, nombre: x.name })) });
-		} catch (e) {
-			return errorKommo(c, e);
-		}
-	});
 
 	app.get("/leads/:lead/imagenes", async (c) => {
 		const id = leadId(c);
@@ -198,7 +216,9 @@ export function crearApp(db: Db) {
 		if (!kommoConfigurado()) return sinKommo(c);
 		try {
 			const archivo = await subirArchivo(new Uint8Array(await c.req.arrayBuffer()), nombre, tipo);
-			const campo = await guardarImagenEnLead(id, archivo);
+			const campo = Number(c.req.header("X-Campo-Imagen")) || null;
+			if (campo) await guardarEnCampo(id, campo, archivo);
+			else await adjuntarALead(id, archivo.uuid);
 			return c.json({ uuid: archivo.uuid, nombre, campo });
 		} catch (e) {
 			return errorKommo(c, e);

@@ -17,6 +17,7 @@
     "loading": "Loading…",
     "error_settings": "Set the server URL in the widget settings first.",
     "error_app": "The invoice generator could not be loaded. Reload the page and try again.",
-    "error_lead": "The lead data could not be read."
+    "error_lead": "The lead data could not be read.",
+    "order_button": "Production order"
   }
 }

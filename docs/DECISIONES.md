@@ -17,7 +17,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 5 | Clave opcional (basta la URL), sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
-| 8 | Imágenes en la pestaña "Imágenes de la pieza" del lead | Por verificar | Crear la pestaña y sus campos por API en la cuenta real; adjuntos de chats sin resolver |
+| 8 | Imágenes en la pestaña "Imágenes de la pieza" del lead (la crea el widget) | Por verificar | Instalar el widget en la cuenta real; adjuntos de chats sin resolver |
 | 9 | Borrador en el servidor, por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
@@ -143,28 +143,21 @@ tope por clave, ver #5).
 
 ## 8. Imágenes de referencia
 
-**Decisión:** las imágenes viven en Kommo; el servidor no las guarda. **Actualización (2026-10-21):** van en una
-pestaña de campos del lead, **"Imágenes de la pieza"**, un campo de tipo archivo por imagen.
+**Decisión:** las imágenes viven en Kommo, en una pestaña de campos del lead, **"Imágenes de la pieza"**, un campo de
+tipo archivo por imagen. **La pestaña y los campos los crea el widget** (no el servidor), con la API de Kommo y la
+sesión del usuario, igual que el widget "IA Campos y Bots".
 
 **Hecho:**
-- Al instalar el widget (y cada vez que se guardan sus ajustes) el widget le pide al servidor que prepare la
-  pestaña: si no existe, la crea con 3 campos archivo, **Imagen 1**, **Imagen 2** e **Imagen 3**
-  (`POST /kommo/instalar`, desde `onSave` en `widget/script.js`). No duplica nada si ya existe.
-- Cada foto que el asesor sube desde el invoice va al primer campo libre de esa pestaña en el lead. Si están todos
-  ocupados, el servidor crea "Imagen 4", "Imagen 5"… sin límite (los campos son de la cuenta: otros leads los
-  reusan). Si la pestaña no existía, la primera subida la crea igual.
-- El widget muestra las imágenes de esos campos, en orden, y también las que estén adjuntas como archivos del lead.
-- El borrador guarda solo las referencias (uuid); las imágenes pasan por el servidor porque Kommo Drive pide el token.
-- Probado de punta a punta contra el Kommo simulado: al instalar se crean los 3 campos; con 4 fotos aparece
-  "Imagen 4"; al reabrir el generador vuelven las 4.
+- Al instalar el widget (y al guardar sus ajustes, `onSave`) el widget crea la pestaña con **Imagen 1**, **Imagen 2** e
+  **Imagen 3** si no existen.
+- Antes de subir cada foto, el widget busca el primer campo libre del lead; si están todos ocupados, crea
+  "Imagen 4", "Imagen 5"… sin límite. El servidor sube la foto a Drive y la guarda en ese campo (`X-Campo-Imagen`).
+- El widget muestra las imágenes de esos campos, en orden, y también las adjuntas como archivos del lead.
+- Probado de punta a punta contra el Kommo simulado (instalar, 4 fotos → "Imagen 4", reabrir).
 
-**Falta:**
-- **Verificar con la cuenta real** que la API permita crear la pestaña y los campos de tipo archivo (subir a Drive y
-  guardar en un campo archivo ya están verificados, #1). Hay que tener en cuenta que eso crea la pestaña y sus
-  campos en la cuenta de Romero.
-- Los adjuntos que el cliente manda por **WhatsApp o Instagram** no son archivos del lead en Kommo: no aparecen.
-  Para usarlos, el asesor los sube desde el widget. Si hace falta leerlos directo del chat, es otra investigación
-  de la API.
+**Falta:** instalar el widget en la cuenta real y ver que se creen las pestañas (subir a Drive y guardar en un campo
+archivo ya están verificados, #1). Los adjuntos de **WhatsApp o Instagram** no son archivos del lead: el asesor los
+sube desde el widget.
 
 ## 9. Dónde vive el borrador
 
@@ -225,3 +218,20 @@ Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rub
    ajustes solo hace falta si se definió `WIDGET_KEY`.
 3. Probar con un lead real: precarga del lead (#12), imágenes (#8), generar (número, PDF en el campo Invoice, #1 y
    #3), un invoice en inglés (#7) y el diseñador con los textos de Romero (#10).
+
+## Orden de producción
+
+**Pedido (2026-10-26):** un generador de órdenes de producción con el formato de la ficha de Romero (orden 1146), que
+use la misma información que el invoice.
+
+**Hecho:**
+- Botón **Orden de producción** en la tarjeta del lead. La orden sale del **mismo borrador que el invoice**: Invoice #,
+  fecha, fecha de entrega, cliente, total, pagos, video, y de la pieza: tipo, talla, metal, piedras (central y halo),
+  grabado, notas e imágenes.
+- Lo que el invoice no tiene se llena en la ventana de la orden y queda en la pestaña **"Orden de producción"** del
+  lead, que crea el widget: Order #, Stuller O.#, Nivoda O.#, Width bottom, Thickness, Est. Weight, Head style, y el
+  campo archivo **Orden de producción (PDF)** donde se guarda el PDF al generarlo.
+- Formato igual al ejemplo: página "Order Details" y página "Cad Details Ring 1" con sus imágenes, en inglés.
+
+**Por verificar:** probarla en la cuenta real con el widget instalado.
+

@@ -4,8 +4,9 @@
 import { mount, unmount } from "svelte";
 import Disenador from "#lib/invoice/Disenador.svelte";
 import Generador from "#lib/invoice/Generador.svelte";
+import OrdenProduccion from "#lib/invoice/OrdenProduccion.svelte";
 import type { Lead } from "#lib/invoice/invoice.svelte.ts";
-import { configurarServidor } from "#lib/invoice/servidor.ts";
+import { configurarServidor, type Kommo } from "#lib/invoice/servidor.ts";
 import css from "./app.css?inline";
 
 type Servidor = { url?: string; clave?: string };
@@ -33,14 +34,26 @@ function raizAislada(host: HTMLElement) {
 
 let ventana: { host: HTMLElement; app: Record<string, unknown> } | null = null;
 
-export function abrirGenerador({ lead, servidor }: { lead: Lead; servidor: Servidor }) {
+export function abrirGenerador({ lead, servidor, kommo }: { lead: Lead; servidor: Servidor; kommo?: Kommo }) {
 	cerrarGenerador();
 	configurarServidor(servidor.url, servidor.clave);
 	const host = document.createElement("div");
 	host.id = "rj-invoice-ventana";
 	host.style.cssText = "position: fixed; inset: 0; z-index: 2147483000;";
 	document.body.append(host);
-	const app = mount(Generador, { target: raizAislada(host), props: { lead, flotante: true, onclose: cerrarGenerador } });
+	const app = mount(Generador, { target: raizAislada(host), props: { lead, kommo, flotante: true, onclose: cerrarGenerador } });
+	ventana = { host, app };
+}
+
+// Orden de producción del lead: misma ventana flotante, mismo borrador que el invoice.
+export function abrirOrden({ lead, servidor, kommo }: { lead: Lead; servidor: Servidor; kommo?: Kommo }) {
+	cerrarGenerador();
+	configurarServidor(servidor.url, servidor.clave);
+	const host = document.createElement("div");
+	host.id = "rj-invoice-ventana";
+	host.style.cssText = "position: fixed; inset: 0; z-index: 2147483000;";
+	document.body.append(host);
+	const app = mount(OrdenProduccion, { target: raizAislada(host), props: { lead, kommo, flotante: true, onclose: cerrarGenerador } });
 	ventana = { host, app };
 }
 
