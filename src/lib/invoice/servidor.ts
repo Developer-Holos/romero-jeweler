@@ -44,8 +44,9 @@ async function pedir(ruta: string, init: RequestInit = {}) {
 		throw new ErrorServidor("No hay conexión con el servidor del widget", 0);
 	}
 	if (!res.ok) {
-		const { error } = await res.json().catch(() => ({ error: "" }));
-		throw new ErrorServidor(error || (res.status === 401 ? "La clave del widget no es válida (ajustes del widget)" : `El servidor respondió ${res.status}`), res.status);
+		// `error` lo mandan las rutas; `message`, los error() de SvelteKit (ej. 413).
+		const { error, message } = await res.json().catch(() => ({ error: "" }));
+		throw new ErrorServidor(error || message || (res.status === 401 ? "La clave del widget no es válida (ajustes del widget)" : `El servidor respondió ${res.status}`), res.status);
 	}
 	return res;
 }

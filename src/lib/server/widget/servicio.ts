@@ -1,7 +1,7 @@
 // Lo que comparten las rutas de /api: variables de entorno, la base (se abre una vez) y respuestas comunes.
 import { timingSafeEqual } from "node:crypto";
 import { resolve } from "node:path";
-import { json } from "@sveltejs/kit";
+import { error, json } from "@sveltejs/kit";
 import * as env from "$app/env/private";
 import { leerAjuste } from "./datos.ts";
 import { abrirDb, type Db } from "./db.ts";
@@ -40,11 +40,12 @@ export const MB = 1024 * 1024;
 
 export const fallo = (error: string, status: number) => json({ error }, { status });
 
-// El cuerpo en JSON, o null si no lo es o pasa del límite.
+// El cuerpo en JSON, o null si no lo es. Si pasa del límite, 413 (como el bodyLimit de Hono que había antes).
 export async function leerJson<T = unknown>(request: Request, limite: number): Promise<T | null> {
-	if (Number(request.headers.get("content-length")) > limite) return null;
+	const grande = () => error(413, `El pedido pesa más de ${Math.round(limite / MB) || 1} MB`);
+	if (Number(request.headers.get("content-length")) > limite) grande();
 	const texto = await request.text().catch(() => "");
-	if (texto.length > limite) return null;
+	if (texto.length > limite) grande();
 	try {
 		return JSON.parse(texto) as T;
 	} catch {

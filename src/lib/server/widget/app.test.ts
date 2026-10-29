@@ -159,6 +159,12 @@ describe("borradores", () => {
 		await app.request("/borradores/55", { method: "PUT", headers: W, body: JSON.stringify({ pieza: "Dije" }) });
 		assert.deepEqual((await (await app.request("/borradores/55", { headers: W })).json()).borrador, { pieza: "Dije" });
 	});
+
+	it("rechaza uno demasiado grande con 413 y un mensaje claro", async () => {
+		const res = await app.request("/borradores/55", { method: "PUT", headers: W, body: JSON.stringify({ x: "a".repeat(2 * 1024 * 1024) }) });
+		assert.equal(res.status, 413);
+		assert.match((await res.json()).message, /más de 1 MB/);
+	});
 });
 
 describe("invoice", () => {
