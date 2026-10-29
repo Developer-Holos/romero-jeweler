@@ -10,7 +10,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 
 | Pieza | Dónde | Qué hace |
 | --- | --- | --- |
-| Tracking de pedidos | `src/routes/orders/[lead_id]`, `src/lib/kommo`, `src/lib/tracking` | Página pública con la etapa de producción del pedido, leída de Kommo |
+| Tracking de pedidos | `src/routes/orders/[lead_id]`, `src/lib/kommo`, `src/lib/tracking` | Página pública con la etapa de producción del pedido, leída de Kommo. Todo error (404 de rutas sin página, pedido inexistente, 5xx) lo muestra `src/routes/+error.svelte`, en español e inglés |
 | Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices y de órdenes de producción (tarjeta del lead) y editor del diseño (ajustes avanzados) |
 | Servidor del widget | `server/` | API externa que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
 

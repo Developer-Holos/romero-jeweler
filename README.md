@@ -47,7 +47,7 @@ src/
 │   └── tracking/tracking.ts(+test) # etapa de Kommo → pasos, % y texto que ve el cliente
 └── routes/
     ├── +layout.svelte             # layout raíz (Tailwind + favicon)
-    ├── +page.svelte               # página de bienvenida por defecto de SvelteKit
+    ├── +error.svelte              # página de error (404/5xx), español + inglés; `/` responde 404 por diseño
     └── orders/[lead_id]/
         ├── +page.server.ts        # load: consulta el lead en Kommo y calcula la etapa
         └── +page.svelte           # vista de tracking (progreso + línea de tiempo)
