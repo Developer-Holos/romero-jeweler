@@ -3,8 +3,8 @@
 //   - la página de Kommo (/lead, /ajustes) y su API para el widget (/api/v4/leads, /api/v4/contacts);
 //   - un servidor del widget falso en /srv (para el tour, sin base ni Chromium);
 //   - Kommo y Kommo Drive para la app real, apuntándole KOMMO_BASE_URL (prueba de punta a punta).
-//   - Las pestañas y campos de los leads (con las opciones de los de selección), y el widget Group Fields
-//     (/api/v4/widgets) con su ajuste ring_config, para ver cómo el widget arma la pestaña "Orden".
+//   - Las pestañas y campos de los leads (con las opciones de los de selección), para ver cómo el widget arma la
+//     pestaña "Orden" y sus grupos por anillo.
 //
 //   node widget/_tour_src/kommo.mjs     → http://localhost:4180/lead  y  /ajustes
 //   …/lead?servidor=http://localhost:4173/api   → usa la API de la app (vite preview) en vez de /srv (más &clave=… si tiene WIDGET_KEY)
@@ -84,22 +84,13 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 	const archivos = new Map();
 	const adjuntos = [];
 	const camposArchivo = [];
-	// Pestañas y campos de los leads, y lo que se guardó en los campos del lead (cada PATCH se suma). Como en la
-	// cuenta real: la pestaña vieja "Widget Invoice" con el campo Invoice y los de producto, y "N° de Anillos".
-	const grupos = [{ id: "leads_vieja", name: "Widget Invoice" }];
-	const campos = [
-		{ id: 133486, name: "Invoice", type: "file", group_id: "leads_vieja", sort: 1 },
-		{ id: 133508, name: "Metal de la pieza", type: "text", group_id: "leads_vieja", sort: 2 },
-		{ id: 133510, name: "Quilates", type: "text", group_id: "leads_vieja", sort: 3 },
-		{ id: 133562, name: "Piedra", type: "text", group_id: "leads_vieja", sort: 4 },
-		{ id: 133564, name: "Talla", type: "text", group_id: "leads_vieja", sort: 5 },
-		{ id: 283974, name: "N° de Anillos", type: "numeric", group_id: null, sort: 6 },
-	];
+	// Pestañas y campos de los leads, y lo que se guardó en los campos del lead (cada PATCH se suma). Arranca como
+	// una cuenta sin la pestaña "Orden": solo "N° de Anillos" (283974, igual que en romerojeweler).
+	const grupos = [];
+	const campos = [{ id: 283974, name: "N° de Anillos", type: "numeric", group_id: null, sort: 6 }];
 	let valores = [];
 	let siguienteEnum = 9000;
 	const conIds = (enums) => (enums ?? []).map((e) => ({ ...e, id: e.id ?? ++siguienteEnum }));
-	// Widget Group Fields instalado en la cuenta, con su ajuste ring_config.
-	let ajustesGF = { api_key: "clave-de-gf", ring_config: JSON.stringify({ field: "N° de Anillos", groups: [] }) };
 	const opcionesSrv = {};
 	let siguiente = 0;
 	const guardar = (nombre, tipo, datos) => {
@@ -155,9 +146,6 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 			if (i !== -1) grupos.splice(i, 1);
 			return (res.writeHead(204), res.end());
 		}
-		if (ruta === "/api/v4/widgets") return json({ _embedded: { widgets: [{ code: "rjinvoice", settings_template: [{ key: "widget_key" }] }, { code: "groupfields", settings_template: [{ key: "api_key" }, { key: "ring_config" }] }] } });
-		if (ruta === "/api/v4/widgets/groupfields" && req.method === "GET") return json({ code: "groupfields", settings: ajustesGF });
-		if (ruta === "/api/v4/widgets/groupfields" && req.method === "POST") return ((ajustesGF = JSON.parse((await leer(req)).toString()).settings), json({ code: "groupfields", settings: ajustesGF }));
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files` && req.method === "PUT") return (adjuntos.push(...JSON.parse((await leer(req)).toString()).map((f) => f.file_uuid)), json({}));
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files`) return adjuntos.length ? json({ _embedded: { files: adjuntos.map((u) => ({ file_uuid: u })) } }) : (res.writeHead(204), res.end());
 		if (ruta === "/api/v4/contacts/55") return json(contacto);
@@ -192,8 +180,6 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 					return { campo: campos.find((c) => c.id === v.field_id)?.name, valor: v.values?.length > 1 ? v.values.map((x) => x.value) : (valor?.file_name ?? valor ?? null) };
 				}),
 				opciones: Object.fromEntries(campos.filter((c) => c.enums).map((c) => [c.name, c.enums.map((e) => e.value)])),
-				groupFields: JSON.parse(ajustesGF.ring_config),
-				groupFieldsApiKey: ajustesGF.api_key,
 			});
 
 		// ─── Servidor del widget falso (/srv), para el tour ───

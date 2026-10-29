@@ -267,3 +267,14 @@ describe("opciones compartidas", () => {
 		assert.deepEqual((await res.json()).textos, ["Width", "2 mm"]);
 	});
 });
+
+describe("campo Invoice que indica el widget", () => {
+	it("guarda el PDF en ese campo en vez de KOMMO_CAMPO_INVOICE", async () => {
+		const { numero } = await (await app.request("/invoices/numero", { method: "POST", headers: W, body: JSON.stringify({ lead_id: 4242 }) })).json();
+		const res = await app.request(`/invoices/${numero}/pdf`, { method: "POST", headers: W, body: JSON.stringify({ html: "<p>x</p>", total: 1, campo_id: 288076 }) });
+		assert.equal(res.headers.get("X-Kommo-Estado"), "guardado");
+		const valores = kommo.lead.get(4242) ?? [];
+		assert.equal(valores.find((v) => v.field_id === 288076)?.values[0].value.file_name, `${numero}.pdf`);
+		assert.equal(valores.some((v) => v.field_id === 777), false);
+	});
+});

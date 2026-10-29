@@ -10,7 +10,9 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const base = await db();
 	const inv = await buscarInvoice(base, params.numero);
 	if (!inv) return fallo("Ese número de invoice no existe", 404);
-	const { html, total, datos } = (await leerJson<{ html?: unknown; total?: unknown; datos?: unknown }>(request, 20 * MB)) ?? {};
+	const { html, total, datos, campo_id } = (await leerJson<{ html?: unknown; total?: unknown; datos?: unknown; campo_id?: unknown }>(request, 20 * MB)) ?? {};
+	// El campo "Invoice" de la pestaña "Orden" lo indica el widget; KOMMO_CAMPO_INVOICE queda de respaldo.
+	const campo = Number.isSafeInteger(campo_id) && (campo_id as number) > 0 ? (campo_id as number) : env.KOMMO_CAMPO_INVOICE;
 	if (typeof html !== "string" || !html.includes("<")) return fallo("Falta el HTML del invoice", 400);
 
 	let pdf: Uint8Array;
@@ -24,10 +26,10 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	let estado = "desactivado";
 	let detalle = "";
-	if (kommoConfigurado() && env.KOMMO_CAMPO_INVOICE) {
+	if (kommoConfigurado() && campo) {
 		try {
 			const archivo = await subirArchivo(pdf, `${inv.numero}.pdf`, "application/pdf");
-			await guardarEnCampo(Number(inv.lead_id), env.KOMMO_CAMPO_INVOICE, archivo);
+			await guardarEnCampo(Number(inv.lead_id), campo, archivo);
 			await marcarSubidoAKommo(base, inv.numero, archivo.uuid);
 			estado = "guardado";
 		} catch (e) {

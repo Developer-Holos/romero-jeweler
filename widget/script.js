@@ -22,14 +22,6 @@ define(['jquery'], function ($) {
     // API del widget en la app publicada en Railway.
     var SERVIDOR_URL = 'https://romero-jeweler-production.up.railway.app/api';
 
-    // Campos sueltos de producto de la cuenta romerojeweler (de antes de los grupos por anillo): si el lead los
-    // tiene llenos, precargan la primera pieza. Si un id no aparece en el lead, se busca por nombre.
-    var CAMPOS_PRODUCTO = {
-      metal: { id: 133508, nombre: 'metal' },
-      quilates: { id: 133510, nombre: 'quilates' },
-      piedra: { id: 133562, nombre: 'piedra' },
-      talla: { id: 133564, nombre: 'talla' }
-    };
     var appPromise = null;
     var desmontarDisenador = null;
 
@@ -109,19 +101,20 @@ define(['jquery'], function ($) {
     // Los crea el widget con la API de Kommo y la sesión del usuario (como el widget "IA Campos y Bots"):
     // busca por nombre y crea solo lo que falta, así que se puede llamar las veces que sea.
     //
-    // Todo va en la pestaña "Orden" (las viejas "Widget Invoice" y "Orden de producción" se vacían en ella y se
-    // borran): primero los campos del pedido y, después, un grupo por anillo con el formato del widget Group Fields:
-    //   *Anillo °1*      ← abre el grupo (no se llena)
+    // Todo va en la pestaña "Orden": primero los campos del pedido y, después, un grupo por anillo con el formato
+    // del widget Group Fields, en ese orden (campo `sort`):
+    //   *Anillo °1*      ← abre el grupo (campo de texto, no se llena)
     //   [1] Metal …      ← los campos del anillo 1
-    //   *!*              ← cierra el grupo
-    // Los grupos son de la cuenta; Group Fields muestra en cada lead tantos como diga "N° de Anillos".
+    //   *!               ← cierra el grupo (Group Fields cierra con un nombre que termina en "!")
+    // Los grupos son de la cuenta; Group Fields muestra en cada lead tantos como diga "N° de Anillos", que el widget
+    // guarda al generar. Cuando hacen falta más anillos, el widget crea el grupo siguiente.
     var PESTANA = 'Orden';
-    var PESTANAS_VIEJAS = ['Widget Invoice', 'Orden de producción'];
     var CAMPO_ANILLOS = { id: 283974, nombre: 'N° de Anillos' };
     var CAMPOS_PEDIDO = [
       { clave: 'orden', nombre: 'Order #', tipo: 'text' },
       { clave: 'stuller', nombre: 'Stuller O.#', tipo: 'text' },
       { clave: 'nivoda', nombre: 'Nivoda O.#', tipo: 'text' },
+      { clave: 'invoice', nombre: 'Invoice', tipo: 'file' },
       { clave: 'pdf', nombre: 'Orden de producción (PDF)', tipo: 'file' }
     ];
     // Igual que KOMMO_ANILLO de src/lib/invoice/campos.ts. `lista`: opciones del campo (de /api/opciones).
@@ -140,9 +133,8 @@ define(['jquery'], function ($) {
       { clave: 'halo', nombre: 'Halo Stones', tipo: 'text' },
       { clave: 'notas', nombre: 'Notes', tipo: 'textarea' }
     ];
-    var CIERRE = '*!*';
+    var CIERRE = '*!';
     var cabecera = function (n) { return '*Anillo °' + n + '*'; };
-    var grupoGF = function (n) { return 'Anillo °' + n; };
     var numeroCabecera = function (nombre) { var m = /^\*Anillo °(\d+)\*$/.exec(nombre); return m ? Number(m[1]) : 0; };
     // Orden dentro de la pestaña: el pedido arriba, después cada anillo en su tramo de 100.
     var base = function (n) { return 1000 + n * 100; };
@@ -214,25 +206,6 @@ define(['jquery'], function ($) {
       });
     };
 
-    // Las pestañas viejas se vacían en "Orden" (sus campos y lo que tienen guardado se conservan) y se borran.
-    this.migrarPestanas = function (ordenId) {
-      return $.when(
-        self.todos('/api/v4/leads/custom_fields/groups', 'custom_field_groups'),
-        self.todos('/api/v4/leads/custom_fields', 'custom_fields')
-      ).then(function (grupos, campos) {
-        var viejas = grupos.filter(function (g) { return PESTANAS_VIEJAS.indexOf(g.name) !== -1; });
-        if (!viejas.length) return;
-        var mover = campos.filter(function (c) {
-          return viejas.some(function (g) { return g.id === c.group_id; });
-        }).map(function (c, i) { return { id: c.id, group_id: ordenId, sort: 100 + i }; });
-        return self.enTandas('PATCH', '/api/v4/leads/custom_fields', mover).then(function () {
-          return $.when.apply($, viejas.map(function (g) {
-            return self.kommoApi('DELETE', '/api/v4/leads/custom_fields/groups/' + g.id);
-          }));
-        });
-      });
-    };
-
     var enumsDe = function (lista) {
       return lista.map(function (v, i) { return { value: v, sort: (i + 1) * 10 }; });
     };
@@ -244,9 +217,7 @@ define(['jquery'], function ($) {
     // Devuelve { pedido: { clave: campo }, anillos: { n: { clave: campo } }, anillosCampo, catalogo }.
     this.estructura = function (cantidad, extra) {
       return $.when(self.opciones(), self.asegurarPestana(PESTANA)).then(function (op, grupoId) {
-        return self.migrarPestanas(grupoId).then(function () {
-          return self.todos('/api/v4/leads/custom_fields', 'custom_fields');
-        }).then(function (todos) {
+        return self.todos('/api/v4/leads/custom_fields', 'custom_fields').then(function (todos) {
           var enPestana = todos.filter(function (c) { return c.group_id === grupoId; });
           var porNombre = function (nombre) { return enPestana.filter(function (c) { return c.name === nombre; })[0]; };
           var extrasAnillo = (op.camposAnillo || []).slice();
@@ -262,11 +233,10 @@ define(['jquery'], function ($) {
           });
           var existentes = enPestana.map(function (c) { return numeroCabecera(c.name); }).filter(Boolean);
           var hasta = Math.max(cantidad || 0, existentes.length ? Math.max.apply(null, existentes) : 0);
-          var creados = [];
           for (var n = 1; n <= hasta; n++) {
             var hayCabecera = !!porNombre(cabecera(n));
             if (!hayCabecera && n > cantidad) continue;
-            if (!hayCabecera) { nuevos.push({ name: cabecera(n), type: 'text', group_id: grupoId, sort: base(n) }); creados.push(n); }
+            if (!hayCabecera) nuevos.push({ name: cabecera(n), type: 'text', group_id: grupoId, sort: base(n) });
             catalogoAnillo.forEach(function (c, k) {
               if (porNombre('[' + n + '] ' + c.nombre)) return;
               var campo = { name: '[' + n + '] ' + c.nombre, type: c.tipo, group_id: grupoId, sort: base(n) + (k < CAMPOS_ANILLO.length ? 1 + k : 50 + k) };
@@ -304,45 +274,13 @@ define(['jquery'], function ($) {
               });
               mapa.anillosCampo = mapa.todos.filter(function (c) { return c.id === CAMPO_ANILLOS.id; })[0] ||
                 mapa.todos.filter(function (c) { return mismoTexto(c.name, CAMPO_ANILLOS.nombre); })[0];
-              var total = Object.keys(mapa.anillos).length;
-              // Si se creó algún grupo, Group Fields tiene que saber que existe.
-              if (!creados.length) return mapa;
-              return self.actualizarGroupFields(total, mapa.anillosCampo).then(function () { return mapa; }, function (e) {
-                console.warn('[rj-invoice] No se pudo actualizar Group Fields: ' + e);
-                return mapa;
-              });
+              return mapa;
             });
           });
         });
       });
     };
     var porNombreEn = function (lista, nombre) { return lista.filter(function (c) { return c.name === nombre; })[0]; };
-
-    // Agrega "Anillo °1…N" a la regla de visibilidad del widget Group Fields (su ajuste ring_config:
-    // { field: "N° de Anillos", groups: ["Anillo °1", …] }), sin tocar sus otros ajustes.
-    this.actualizarGroupFields = function (total, campoAnillos) {
-      var tieneRingConfig = function (w) {
-        var t = w.settings_template || [];
-        return $.isArray(t) ? t.some(function (s) { return s && s.key === 'ring_config'; }) : !!t.ring_config;
-      };
-      return self.todos('/api/v4/widgets', 'widgets').then(function (ws) {
-        var gf = ws.filter(tieneRingConfig)[0];
-        if (!gf) return;
-        return self.kommoApi('GET', '/api/v4/widgets/' + gf.code).then(function (w) {
-          var ajustes = $.extend({}, w.settings);
-          var actual = {};
-          try { actual = JSON.parse(ajustes.ring_config || '{}') || {}; } catch (e) { actual = {}; }
-          var grupos = $.isArray(actual.groups) ? actual.groups.slice() : [];
-          var otros = grupos.filter(function (g) { return !/^Anillo °\d+$/.test(String(g).trim()); });
-          var anillos = [];
-          for (var n = 1; n <= total; n++) anillos.push(grupoGF(n));
-          var nueva = { field: actual.field || (campoAnillos && campoAnillos.name) || CAMPO_ANILLOS.nombre, groups: anillos.concat(otros) };
-          if (JSON.stringify(nueva) === JSON.stringify({ field: actual.field, groups: grupos })) return;
-          ajustes.ring_config = JSON.stringify(nueva);
-          return self.kommoApi('POST', '/api/v4/widgets/' + gf.code, { settings: ajustes });
-        });
-      });
-    };
 
     // Valor de un campo del lead como texto (o lista, en una selección múltiple).
     var valorDe = function (lead, campo) {
@@ -371,7 +309,7 @@ define(['jquery'], function ($) {
     };
 
     // Escribe la orden en el lead: crea los grupos que falten, agrega a los campos de selección las opciones
-    // que todavía no tengan, y guarda "N° de Anillos". Devuelve { pdf: id del campo del PDF de la orden }.
+    // que todavía no tengan, y guarda "N° de Anillos". Devuelve los ids de los campos archivo: { invoice, pdf }.
     this.guardarOrden = function (leadId, datos) {
       return self.estructura(datos.cantidad).then(function (mapa) {
         // Opciones nuevas que llegan en los valores (ej. un metal escrito a mano en un borrador viejo).
@@ -418,7 +356,7 @@ define(['jquery'], function ($) {
           });
           if (mapa.anillosCampo) cuerpo.push({ field_id: mapa.anillosCampo.id, values: [{ value: datos.cantidad }] });
           return self.kommoApi('PATCH', '/api/v4/leads/' + leadId, { custom_fields_values: cuerpo }).then(function () {
-            return { pdf: mapa.pedido.pdf && mapa.pedido.pdf.id };
+            return { invoice: mapa.pedido.invoice && mapa.pedido.invoice.id, pdf: mapa.pedido.pdf && mapa.pedido.pdf.id };
           });
         });
       });
@@ -508,12 +446,9 @@ define(['jquery'], function ($) {
       };
     };
 
-    // Al instalar (y al guardar los ajustes): la pestaña "Orden" con el grupo del anillo 1, la de imágenes,
-    // y Group Fields al día.
+    // Al instalar (y al guardar los ajustes): la pestaña "Orden" con el grupo del anillo 1 y la de imágenes.
     this.prepararKommo = function () {
-      $.when(self.estructura(1), self.camposImagenes(IMAGENES_INICIALES)).then(function (mapa) {
-        return self.actualizarGroupFields(Object.keys(mapa.anillos).length, mapa.anillosCampo);
-      }).fail(function (detalle) {
+      $.when(self.estructura(1), self.camposImagenes(IMAGENES_INICIALES)).fail(function (detalle) {
         console.warn('[rj-invoice] No se pudo preparar la pestaña Orden en Kommo: ' + detalle);
       });
     };
@@ -585,7 +520,7 @@ define(['jquery'], function ($) {
     };
 
     // Datos del lead para precargar el invoice: contacto principal, correo,
-    // responsable, presupuesto (precio del lead, solo lectura) y campos de producto.
+    // responsable y presupuesto (precio del lead, solo lectura).
     this.leadInfo = function () {
       var leadId = APP.data.current_card.id;
       return $.ajax({ url: '/api/v4/leads/' + leadId + '?with=contacts', dataType: 'json' })
@@ -598,8 +533,7 @@ define(['jquery'], function ($) {
             contacto: '',
             email: '',
             responsable: self.userName(lead.responsible_user_id),
-            presupuesto: Number(lead.price) || 0,
-            producto: self.producto(lead)
+            presupuesto: Number(lead.price) || 0
           };
           if (!principal) return info;
           return $.ajax({ url: '/api/v4/contacts/' + principal.id, dataType: 'json' })
@@ -614,23 +548,6 @@ define(['jquery'], function ($) {
           // Rechazo explícito: en jQuery 3 devolver un valor desde aquí resolvería la promesa.
           return $.Deferred().reject(self.t('error_lead')).promise();
         });
-    };
-
-    // Campos de producto del lead (Metal, Quilates, Piedra, Talla). Ver docs/DECISIONES.md, #12.
-    this.producto = function (lead) {
-      var campos = lead.custom_fields_values || [];
-      function valor(c) {
-        var campo = campos.filter(function (f) { return f.field_id === c.id; })[0] ||
-          campos.filter(function (f) { return String(f.field_name || '').trim().toLowerCase() === c.nombre; })[0];
-        var v = campo && campo.values && campo.values[0] && campo.values[0].value;
-        return v == null ? '' : String(v);
-      }
-      return {
-        metal: valor(CAMPOS_PRODUCTO.metal),
-        quilates: valor(CAMPOS_PRODUCTO.quilates),
-        piedra: valor(CAMPOS_PRODUCTO.piedra),
-        talla: valor(CAMPOS_PRODUCTO.talla)
-      };
     };
 
     this.fieldValue = function (entity, code) {

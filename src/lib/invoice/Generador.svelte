@@ -127,7 +127,7 @@
 	}
 
 	// ─── Piezas ───────────────────────────────────────────────────────────────
-	// La primera se precarga con lo que tenga el lead (grupo "Anillo °1" o los campos sueltos de producto);
+	// La primera se precarga con lo que tenga el grupo "Anillo °1" del lead en Kommo;
 	// las siguientes traen las mismas filas de la orden que la anterior.
 	function agregarPieza() {
 		const anterior = d.piezas.at(-1);
@@ -223,10 +223,17 @@
 			let blob: Blob;
 			if (d.sinCliente) blob = await generarCotizacion(html);
 			else {
-				const [r, enLead] = await Promise.all([
-					generarInvoice(d.numero, html, t.total, $state.snapshot(d)),
-					kommo ? Promise.resolve(kommo.guardarOrden(lead.id, ordenAKommo($state.snapshot(d) as Borrador))).then(() => "", (e) => String(e)) : "",
-				]);
+				// Primero la pestaña "Orden" (crea los grupos que falten y dice dónde está el campo Invoice); si falla, el
+				// PDF sale igual.
+				let campoInvoice: number | undefined;
+				let enLead = "";
+				if (kommo)
+					try {
+						campoInvoice = (await kommo.guardarOrden(lead.id, ordenAKommo($state.snapshot(d) as Borrador))).invoice;
+					} catch (e) {
+						enLead = String(e);
+					}
+				const r = await generarInvoice(d.numero, html, t.total, $state.snapshot(d), campoInvoice);
 				blob = r.pdf;
 				if (r.kommo === "error") avisoKommo = `No se pudo guardar en el lead (${r.detalle || "Kommo no respondió"}). El PDF se descargó igual.`;
 				else if (r.kommo === "desactivado") avisoKommo = "La app no tiene configurado el campo Invoice de Kommo: el PDF solo se descargó.";

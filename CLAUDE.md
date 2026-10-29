@@ -41,11 +41,12 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   ubicaciones y campos extra de la orden. Las de fábrica están en el código; las que agrega un asesor ("+ Otro metal"…)
   quedan en la app para todos, y el widget las suma como opción de los campos de selección de Kommo.
 - **Pestaña "Orden"** (la arma `estructura` en `widget/script.js`): arriba los campos del pedido (Order #, Stuller O.#,
-  Nivoda O.#, el PDF de la orden y los que se creen) y después un grupo por anillo con el formato de **Group Fields**:
-  `*Anillo °N*`, los campos `[N] Metal`, `[N] Quilates`… y `*!*`. Los grupos son de la cuenta; Group Fields muestra en
-  cada lead tantos como diga **"N° de Anillos"** (283974), que el widget guarda al generar. Cuando el widget crea un
-  grupo, agrega "Anillo °N" al ajuste `ring_config` de Group Fields (`/api/v4/widgets`). Las pestañas viejas "Widget
-  Invoice" y "Orden de producción" se vacían en "Orden" (campos y valores se conservan) y se borran.
+  Nivoda O.#, Invoice, Orden de producción (PDF) y los que se creen) y después un grupo por anillo, en este orden
+  (`sort`): `*Anillo °N*` (texto), los campos `[N] Metal`, `[N] Quilates`… y `*!` (texto). Así lo reconoce el widget
+  **Group Fields** (cierra con un nombre que termina en `!`: `*!*` no cierra). Los grupos son de la cuenta; Group Fields
+  muestra en cada lead tantos como diga **"N° de Anillos"** (283974), que el widget guarda al generar. Si hacen falta
+  más anillos, el widget crea el grupo siguiente. El widget no toca los ajustes de Group Fields (no aparece en
+  `/api/v4/widgets`) ni mueve campos entre pestañas (Kommo no lo permitió).
 - **Las pestañas y campos del lead los crea el widget, no la API** (`widget/script.js`, con `$.ajax` a `/api/v4`
   y la sesión del usuario, igual que el widget "IA Campos y Bots"): busca por nombre y crea solo lo que falta. Se
   crean al instalar (`onSave`) y, si faltan, al usarlas. La API solo sube archivos a Drive y los guarda en el
@@ -63,9 +64,11 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   Romero los edita en la pestaña Textos del diseñador. No escribir textos legales en el código.
 - Los montos los calcula el widget; la IA nunca los cambia. La API descarta cualquier texto en el que la IA
   haya alterado una cifra o el mes de una fecha (`src/lib/server/widget/ia.ts`, `validar`).
-- El precio del lead es solo lectura. Los campos sueltos de producto de antes de los grupos (`CAMPOS_PRODUCTO` en
-  `widget/script.js`: Metal 133508, Quilates 133510, Piedra 133562, Talla 133564) no se tocan: si están llenos, precargan
-  la primera pieza. El campo Invoice es el 133486 (`KOMMO_CAMPO_INVOICE`).
+- El precio del lead es solo lectura. El PDF del invoice va al campo **Invoice** de la pestaña "Orden": el widget le
+  pasa su id a la API (`campo_id`); `KOMMO_CAMPO_INVOICE` queda solo de respaldo.
+- **Pestaña "Orden" en la cuenta real** (rehecha el 2026-10-29 con la API, a pedido del equipo): se borraron los campos y
+  las pestañas "Orden de producción" y "Widget Invoice" (y con ellos los Metal/Quilates/Piedra/Talla sueltos y el
+  Invoice 133486) y se creó la estructura de arriba con el anillo 1 (Invoice: 288076, PDF de la orden: 288078).
 - **Versión del widget** (`manifest.json`): súbela con cada zip nuevo. `script.js` carga `app.js` y `style.css` con
   `?v=<versión>`; si no cambia, los navegadores siguen usando los viejos (pasó: el widget llamaba a rutas sin `/api`).
 

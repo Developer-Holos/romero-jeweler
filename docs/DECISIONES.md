@@ -258,20 +258,21 @@ en inglés o español.
 - **Orden:** "Order Details" y un "Cad Details Ring N" por pieza, cada uno con sus imágenes. Filas por defecto como en
   el ejemplo; "+ Agregar otro campo" (uno configurado o uno nuevo, que se crea en todos los anillos), x para quitar,
   "+ Agregar otro anillo". Inglés o español: los nombres de las filas siempre, los valores solo si se marca.
-- **Kommo:** pestaña "Orden" con los campos del pedido y los grupos `*Anillo °N*` … `*!*` (`[N] Metal`, `[N] Quilates`,
+- **Kommo:** pestaña "Orden" con los campos del pedido y los grupos `*Anillo °N*` … `*!` (`[N] Metal`, `[N] Quilates`,
   `[N] Piedra`, `[N] Talla`, `[N] Ring Type`, `[N] Size`, `[N] Width`, `[N] Thickness`, `[N] Est. Weight`,
   `[N] Engraving`, `[N] Head style`, `[N] Halo Stones`, `[N] Notes`, más los creados). Metal, Quilates y Ring Type son
-  de selección y Piedra de selección múltiple. "N° de Anillos" (283974) se guarda al generar. Al crear un grupo, el
-  widget agrega "Anillo °N" a la regla de Group Fields. Las pestañas "Widget Invoice" y "Orden de producción" se
-  vacían en "Orden" y se borran; los campos sueltos Metal/Quilates/Piedra/Talla se dejan y precargan la primera pieza.
+  de selección y Piedra de selección múltiple. "N° de Anillos" (283974) se guarda al generar.
 - Probado de punta a punta contra el Kommo simulado (instalar, 2 piezas, opciones nuevas, invoice, orden en español con
   un campo creado y un tercer anillo, y un valor cambiado a mano en Kommo).
 
-**Por verificar en la cuenta real** (solo se probó en el simulado):
-1. Que Kommo deje mover campos de pestaña (`PATCH /api/v4/leads/custom_fields` con `group_id`) y borrar las pestañas viejas.
-2. Que `GET/POST /api/v4/widgets/{código}` lea y guarde los ajustes de Group Fields (`ring_config`) sin perder su
-   `api_key`. Si no, la regla se ajusta a mano en Group Fields.
-3. Que Kommo acepte varios campos con el mismo nombre (`*!*`, uno por grupo).
+**Cambio (2026-10-29, en la cuenta real):** el widget no pudo mover campos entre pestañas, y Group Fields no aparece en
+`/api/v4/widgets` (no se pueden tocar sus ajustes). A pedido del equipo, la pestaña "Orden" se rehízo con la API: se
+borraron los campos de "Orden de producción" y "Widget Invoice" (y esas pestañas) y se crearon los del pedido y el
+grupo del anillo 1. Los grupos cierran con `*!` (no `*!*`) para que Group Fields los reconozca; Group Fields solo
+necesita "N° de Anillos". Los anillos 2, 3… los crea el widget cuando hacen falta.
+
+**Por verificar en la cuenta real:** instalar el widget nuevo, generar un invoice con 2 piezas en el lead de prueba
+407872 y ver que se cree el grupo "Anillo °2" y que Group Fields lo muestre.
 
 **Dudas del documento:** la lista de campos por anillo trae "Metal" dos veces (se creó una sola) y trae "Talla" y "Size";
 se crearon los dos y los dos se llenan con la talla de la pieza.

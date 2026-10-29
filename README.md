@@ -160,14 +160,12 @@ adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las im
 
 | Campo | Tipo | Id | Lo usa |
 | --- | --- | --- | --- |
-| Invoice | Archivo | 133486 | La API guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
+| Invoice (pestaña Orden) | Archivo | 288076 | La API guarda ahí el PDF (el widget le pasa el id) |
+| Orden de producción (PDF) | Archivo | 288078 | La API guarda ahí el PDF de la orden |
 | N° de Anillos | Numérico | 283974 | El widget guarda cuántas piezas tiene el invoice; Group Fields muestra esos grupos |
-| Metal | Lista | 133508 | El widget lo precarga (`CAMPOS_PRODUCTO` en `widget/script.js`) |
-| Quilates | Lista | 133510 | Ídem |
-| Piedra | Lista | 133562 | Ídem |
-| Talla | Texto | 133564 | Ídem |
+| `*Anillo °N*` … `[N] …` … `*!` | — | — | Un grupo por anillo en la pestaña Orden; el widget crea los que falten |
 
-Los campos de producto se buscan por id y, si no aparecen, por nombre.
+El widget busca los campos de la pestaña Orden por nombre, así que los ids pueden cambiar.
 
 ## Pendientes
 

@@ -34,8 +34,8 @@ export type Kommo = {
 	campoImagenLibre(leadId: number): PromiseLike<{ id: number; nombre: string }>;
 	leerOrden(leadId: number): PromiseLike<OrdenKommo>;
 	// Crea los grupos que falten, escribe los valores y "N° de Anillos". Devuelve el id del campo del PDF de la orden.
-	guardarOrden(leadId: number, datos: OrdenKommo): PromiseLike<{ pdf?: number }>;
-	// Grupos "*Anillo °1…N*" con sus campos (y Group Fields al día).
+	guardarOrden(leadId: number, datos: OrdenKommo): PromiseLike<{ invoice?: number; pdf?: number }>;
+	// Grupos "*Anillo °1…N*" con sus campos.
 	asegurarAnillos(cantidad: number): PromiseLike<unknown>;
 	agregarOpcion(lista: ListaOpcion, valor: string): PromiseLike<unknown>;
 	crearCampo(donde: "anillo" | "pedido", clave: string, nombre: string): PromiseLike<unknown>;
@@ -110,8 +110,9 @@ export async function pedirNumero(leadId: number): Promise<string> {
 
 // `kommo`: si el PDF quedó en el campo "Invoice" del lead ("guardado"), si falló ("error") o si el
 // servidor no tiene Kommo configurado ("desactivado").
-export async function generarInvoice(numero: string, html: string, total: number, datos: unknown) {
-	const res = await pedir(`/invoices/${encodeURIComponent(numero)}/pdf`, { method: "POST", body: JSON.stringify({ html, total, datos }) });
+// `campoId`: el campo "Invoice" de la pestaña "Orden" del lead (lo indica el widget); sin él, KOMMO_CAMPO_INVOICE.
+export async function generarInvoice(numero: string, html: string, total: number, datos: unknown, campoId?: number) {
+	const res = await pedir(`/invoices/${encodeURIComponent(numero)}/pdf`, { method: "POST", body: JSON.stringify({ html, total, datos, campo_id: campoId }) });
 	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };
 }
 
