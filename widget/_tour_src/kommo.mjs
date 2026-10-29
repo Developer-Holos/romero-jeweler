@@ -2,10 +2,10 @@
 // Hace de tres cosas a la vez:
 //   - la página de Kommo (/lead, /ajustes) y su API para el widget (/api/v4/leads, /api/v4/contacts);
 //   - un servidor del widget falso en /srv (para el tour, sin base ni Chromium);
-//   - Kommo y Kommo Drive para el servidor real, apuntándole KOMMO_BASE_URL (prueba de punta a punta).
+//   - Kommo y Kommo Drive para la app real, apuntándole KOMMO_BASE_URL (prueba de punta a punta).
 //
 //   node widget/_tour_src/kommo.mjs     → http://localhost:4180/lead  y  /ajustes
-//   …/lead?servidor=http://localhost:8787   → usa el servidor real en vez de /srv (más &clave=… si tiene WIDGET_KEY)
+//   …/lead?servidor=http://localhost:4173/api   → usa la API de la app (vite preview) en vez de /srv (más &clave=… si tiene WIDGET_KEY)
 //
 // El widget trae fija la URL del servidor de Railway (SERVIDOR_URL en script.js): al servir script.js se cambia
 // por la de esta prueba, para no tocar el servidor de producción.

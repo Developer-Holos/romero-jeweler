@@ -1,13 +1,13 @@
 **/node_modules
 .svelte-kit
 build
+data
 .claude
+.git
 graphify-out
 references
 widget
-src
-static
-server/data
-server/.env
+docs
 .env
 .env.*
+!.env.example

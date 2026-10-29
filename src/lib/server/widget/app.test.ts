@@ -1,6 +1,11 @@
-// La API de punta a punta contra un Kommo falso (cuenta, Drive, leads y archivos) y una base PGlite en memoria.
+// La API del widget (/api) de punta a punta: la app compilada (`vite build`, adapter-node) contra un Kommo falso
+// (cuenta, Drive, leads y archivos) y una base PGlite en una carpeta temporal. Correr `vite build` antes.
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 
 const leer = async (req: IncomingMessage) => {
@@ -82,39 +87,60 @@ const falso = createServer(async (req, res) => {
 	json({ title: "Not found" }, 404);
 });
 
-let app: { request: (url: string, init?: RequestInit) => Response | Promise<Response> };
-let db: { cerrar(): Promise<void> };
+const PUERTO = 3917;
+const app = { request: (ruta: string, init?: RequestInit) => fetch(`http://127.0.0.1:${PUERTO}/api${ruta}`, init) };
+const datos = mkdtempSync(join(tmpdir(), "rj-api-"));
+let proceso: ReturnType<typeof spawn>;
 
 before(async () => {
 	await new Promise<void>((ok) => falso.listen(0, "127.0.0.1", ok));
-	Object.assign(process.env, {
-		WIDGET_KEY: "clave-widget",
-		ADMIN_KEY: "clave-admin",
-		KOMMO_BASE_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}`,
-		KOMMO_ACCESS_TOKEN: "token-kommo",
-		KOMMO_CAMPO_INVOICE: "777",
-		OPENAI_MODEL: "modelo-inicial",
+	proceso = spawn(process.execPath, ["build"], {
+		env: {
+			...process.env,
+			PORT: String(PUERTO),
+			HOST: "127.0.0.1",
+			DATA_DIR: datos,
+			DATABASE_URL: "",
+			OPENAI_API_KEY: "",
+			ORIGENES: "https://romerojeweler.kommo.com",
+			WIDGET_KEY: "clave-widget",
+			ADMIN_KEY: "clave-admin",
+			KOMMO_SUBDOMAIN: "x",
+			KOMMO_BASE_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}`,
+			KOMMO_ACCESS_TOKEN: "token-kommo",
+			KOMMO_CAMPO_INVOICE: "777",
+			OPENAI_MODEL: "modelo-inicial",
+		},
+		stdio: ["ignore", "pipe", "inherit"],
 	});
-	const { abrirDb } = await import("./db.ts");
-	const { crearApp } = await import("./app.ts");
-	db = await abrirDb({ dir: "memoria" });
-	app = crearApp(db as never);
+	await new Promise<void>((ok, mal) => {
+		proceso.stdout!.on("data", (d) => String(d).includes("Listening") && ok());
+		proceso.once("exit", (c) => mal(new Error(`la app salió con ${c} (¿falta vite build?)`)));
+	});
 });
 
 after(async () => {
-	const { cerrarNavegador } = await import("./pdf.ts");
-	await cerrarNavegador();
-	await db.cerrar();
+	proceso.kill();
 	falso.close();
+	await new Promise((ok) => setTimeout(ok, 300));
+	rmSync(datos, { recursive: true, force: true });
 });
 
 const W = { "X-Widget-Key": "clave-widget", "Content-Type": "application/json" };
 
-describe("claves", () => {
+describe("claves y CORS", () => {
 	it("pide la clave del widget y la de administración por separado", async () => {
 		assert.equal((await app.request("/plantilla")).status, 401);
 		assert.equal((await app.request("/admin/ia", { headers: W })).status, 401);
 		assert.equal((await app.request("/salud")).status, 200);
+	});
+
+	it("deja llamar a la API desde la cuenta de Kommo", async () => {
+		const res = await app.request("/plantilla", { method: "OPTIONS", headers: { Origin: "https://romerojeweler.kommo.com", "Access-Control-Request-Headers": "x-widget-key" } });
+		assert.equal(res.status, 204);
+		assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://romerojeweler.kommo.com");
+		const otro = await app.request("/plantilla", { headers: { ...W, Origin: "https://otro.com" } });
+		assert.equal(otro.headers.get("Access-Control-Allow-Origin"), null);
 	});
 });
 

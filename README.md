@@ -11,7 +11,7 @@ directo de la etapa en la que está su lead dentro del CRM **Kommo**.
 - **SvelteKit 3** + **Svelte 5** (runes forzado en todo el proyecto)
 - **TypeScript 6** (strict), **Vite 8**, **Tailwind CSS 4**
 - **Vitest 4** (proyecto `client` en navegador con Playwright, proyecto `server` en Node)
-- `@sveltejs/adapter-auto` (aún sin plataforma de despliegue definida)
+- `@sveltejs/adapter-node`: publicada en Railway con el `Dockerfile` de la raíz (tracking y API del widget juntos)
 - Gestor de paquetes: **pnpm**
 
 ## Comandos
@@ -22,12 +22,13 @@ pnpm dev        # servidor de desarrollo
 pnpm check      # svelte-check (tipos)
 pnpm test       # vitest (una sola pasada)
 pnpm build && pnpm preview
+pnpm build && pnpm test:api   # API del widget: node:test contra la app compilada, Kommo falso y PGlite
 ```
 
 ## Variables de entorno
 
 Declaradas en `src/env.ts` con `defineEnvVars` y leídas desde `$app/env/private` (solo servidor).
-Se cargan desde `.env` (ignorado por git).
+Se cargan desde `.env` (ignorado por git; plantilla en `.env.example`, con las de la API del widget).
 
 | Variable             | Uso                                                  | En `.env` |
 | -------------------- | ---------------------------------------------------- | --------- |
@@ -96,21 +97,22 @@ contactos Posición, Teléfono y Email. No hay campos de producto ni de metal.
 Probado de punta a punta con un lead real: avance, vuelta atrás, entrega, ganado, cancelado, lead en
 Ventas (404), ids inválidos (404) y token inválido (502 + log).
 
-## Widget de invoice de Kommo (`widget/`) y su servidor (`server/`)
+## Widget de invoice de Kommo (`widget/`) y su API (`src/routes/api`)
 
-El widget es solo la interfaz; el trabajo pesado lo hace un **servidor aparte** que el widget llama por URL.
+El widget es solo la interfaz; el trabajo pesado lo hace la **API de esta misma app** (`/api`), que el widget llama
+por URL. No hay un servidor aparte: la página de tracking y la API se publican juntas.
 
 **En Kommo** (`widget/`, mismo formato que los demás widgets de Holos: AMD + jQuery, `i18n`, logos, tour):
 
 - **Tarjeta del lead** (`lcard-1`): botón **Generar invoice** que abre una ventana flotante con el formulario y la
   vista previa. Llega precargado con el contacto principal, su correo, el responsable, el precio del lead (solo
-  lectura) y los campos de producto (Metal, Quilates, Piedra, Talla). El borrador se guarda en el servidor, por
+  lectura) y los campos de producto (Metal, Quilates, Piedra, Talla). El borrador se guarda en la app, por
   lead. Al generar, el invoice recibe su número, la IA pule el texto (o traduce todo al inglés) y el PDF se guarda
   en el campo **Invoice** del lead y se descarga.
 - **Ajustes avanzados** (`advanced_settings`): el editor del diseño (bloques, colores, tipografía, logo, pie) y la
   pestaña **Textos** con los textos legales y valores por defecto. Es el mismo para todos los asesores.
-- **Servidor:** fijo en el widget, `https://romero-jeweler-production.up.railway.app` (`SERVIDOR_URL` en `widget/script.js`). El único ajuste,
-  *Clave del widget*, es opcional y solo hace falta si el servidor tiene `WIDGET_KEY`.
+- **API:** fija en el widget, `https://romero-jeweler-production.up.railway.app/api` (`SERVIDOR_URL` en `widget/script.js`). El
+  único ajuste, *Clave del widget*, es opcional y solo hace falta si la app tiene `WIDGET_KEY`.
 
 El generador y el diseñador son los componentes de Svelte de `src/lib/invoice/`, compilados en
 `widget/app.js` (`vite.widget.config.ts`) y montados dentro de un Shadow DOM para que su CSS y el de Kommo no
@@ -125,9 +127,9 @@ Las imágenes del tour salen de `widget/_tour_src/`: un Kommo simulado carga el 
 (en inglés la interfaz se traduce con `en.mjs`) y se arman las diapositivas de 1188×616. Si cambia un texto de
 la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 
-**El servidor** (`server/`, Node + Hono + Postgres), publicado en Railway con `server/Dockerfile`:
+**La API** (`src/routes/api`, rutas `+server.ts`; la lógica en `src/lib/server/widget`, con Postgres):
 
-| Ruta | Qué hace |
+| Ruta (bajo `/api`) | Qué hace |
 | --- | --- |
 | `GET /salud` | Estado: IA y Kommo configurados (sin clave) |
 | `GET/PUT /plantilla` | Diseño y textos compartidos por todos los asesores |
@@ -140,21 +142,23 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `POST /ordenes/pdf` | Orden de producción → PDF; con `campo_id`, lo guarda en el campo archivo de la pestaña "Orden de producción" |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
 
-Basta con la URL del servidor. Si se define `WIDGET_KEY`, todo menos `/salud` y `/admin` pide además el header
-`X-Widget-Key`. Los navegadores solo pueden llamarlo desde los orígenes de `ORIGENES`.
+Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud` y `/api/admin` pide además el header
+`X-Widget-Key` (lo revisa `src/hooks.server.ts`, junto con CORS). Los navegadores solo pueden llamarla desde los
+orígenes de `ORIGENES`.
 
 ```sh
-cp server/.env.example server/.env   # completar ADMIN_KEY, OPENAI_API_KEY y Kommo (WIDGET_KEY es opcional)
-pnpm install                         # instala también Chromium para el servidor
-pnpm --filter jeweler-servidor dev   # http://localhost:8787 (sin DATABASE_URL usa PGlite en server/data)
-pnpm --filter jeweler-servidor test
+cp .env.example .env         # completar Kommo, ADMIN_KEY y OPENAI_API_KEY (WIDGET_KEY es opcional)
+pnpm build && pnpm preview   # o `node build`; sin DATABASE_URL usa PGlite en data/
 ```
+
+En Railway, el `Dockerfile` usa la imagen de Playwright (Chromium para los PDF) y fija `BODY_SIZE_LIMIT=25M`:
+adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las imágenes adentro.
 
 **Campos de los leads en Kommo (cuenta `romerojeweler`):**
 
 | Campo | Tipo | Id | Lo usa |
 | --- | --- | --- | --- |
-| Invoice | Archivo | 133486 | El servidor guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
+| Invoice | Archivo | 133486 | La API guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
 | Metal | Lista | 133508 | El widget lo precarga (`CAMPOS_PRODUCTO` en `widget/script.js`) |
 | Quilates | Lista | 133510 | Ídem |
 | Piedra | Lista | 133562 | Ídem |
@@ -174,4 +178,3 @@ Las decisiones del widget de invoice, con lo que ya está hecho y lo que falta v
 2. **Fecha de la primera etapa**: un lead creado directamente en Producción no tiene evento de cambio
    de etapa, así que esa primera etapa sale sin fecha. Los leads que pasan desde Ventas sí la tienen.
 3. **Subtítulo** (metal, como en la referencia): no existe el campo en Kommo; hay que crearlo primero.
-4. `adapter-auto` → cambiar por el adaptador del hosting final.

@@ -1,4 +1,4 @@
-// Postgres del servidor: plantilla de diseño, ajustes (modelo de IA), borradores por lead y el registro
+// Postgres de la app (API del widget): plantilla de diseño, ajustes (modelo de IA), borradores por lead y el registro
 // de invoices con su correlativo. En producción, `pg` con DATABASE_URL (Railway). Sin DATABASE_URL,
 // PGlite (Postgres compilado a WASM) en DATA_DIR, para desarrollar y probar sin instalar nada.
 import { PGlite } from "@electric-sql/pglite";
