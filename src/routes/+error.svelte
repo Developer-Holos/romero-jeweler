@@ -2,7 +2,8 @@
   import { page } from "$app/state";
 
   const serverError = $derived(page.status >= 500);
-  const isOrder = $derived(page.url.pathname.startsWith("/orders/"));
+  const notFound = $derived(page.status === 404);
+  const isOrder = $derived(/^\/orders(\/|$)/.test(page.url.pathname));
 
   // Texto propio: page.error.message es técnico y está solo en español.
   const text = $derived(
@@ -11,20 +12,25 @@
           es: ["Algo falló de nuestro lado", "Intenta de nuevo en unos minutos."],
           en: ["Something went wrong on our end", "Please try again in a few minutes."],
         }
-      : isOrder
+      : !notFound
         ? {
-            es: ["No encontramos este pedido", "Revisa que el enlace sea el que te enviamos."],
-            en: ["We couldn't find this order", "Please check that the link is the one we sent you."],
+            es: ["No pudimos procesar la solicitud", "Revisa que el enlace sea el correcto."],
+            en: ["We couldn't process the request", "Please check that the link is correct."],
           }
-        : {
-            es: ["No encontramos esta página", "Revisa que el enlace sea el correcto."],
-            en: ["We couldn't find this page", "Please check that the link is correct."],
-          },
+        : isOrder
+          ? {
+              es: ["No encontramos este pedido", "Revisa que el enlace sea el que te enviamos."],
+              en: ["We couldn't find this order", "Please check that the link is the one we sent you."],
+            }
+          : {
+              es: ["No encontramos esta página", "Revisa que el enlace sea el correcto."],
+              en: ["We couldn't find this page", "Please check that the link is correct."],
+            },
   );
 </script>
 
 <svelte:head>
-  <title>{page.status} · {serverError ? "Error" : "No encontrado / Not found"}</title>
+  <title>{page.status} · {text.es[0]} / {text.en[0]}</title>
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 

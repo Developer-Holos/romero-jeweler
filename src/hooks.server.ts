@@ -12,7 +12,7 @@ const CORS = {
 
 export const handle: Handle = async ({ event, resolve }) => {
   const ruta = event.url.pathname;
-  if (!ruta.startsWith('/api/')) return resolve(event);
+  if (ruta !== '/api' && !ruta.startsWith('/api/')) return resolve(event);
 
   const origen = event.request.headers.get('Origin');
   const cors: Record<string, string> = origen && env.ORIGENES.includes(origen) ? { ...CORS, 'Access-Control-Allow-Origin': origen, Vary: 'Origin' } : {};
