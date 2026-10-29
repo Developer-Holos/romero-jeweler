@@ -111,6 +111,11 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
   adentro. El `Dockerfile` lo fija en 25M; al correr `node build` a mano, definirlo también.
 - **El `railway.json` de la raíz decide qué se publica.** Si apunta a otro Dockerfile, la página de tracking deja de
   existir (pasó con el servidor aparte).
+- **Kommo no acepta archivos de más de 9 MB** (`MAX_ARCHIVO` en `servidor.ts`). Por eso las fotos van al PDF
+  achicadas a 1600 px en JPEG (`htmlDelInvoice`), y las que pesan más de 9 MB se comprimen antes de subirlas
+  (`paraKommo`). La API lo vuelve a revisar: un PDF más pesado se descarga, pero no va al lead.
+- **Llamadas a Kommo**: se cortan a los 30 s, en la API (`kommo.ts`) y en el widget (`kommoApi`). Si Kommo se cuelga, el
+  PDF se descarga igual con el aviso.
 
 ## Probar el widget sin Kommo
 

@@ -132,8 +132,9 @@ const ANCHO = 560;
 export async function htmlDelInvoice(articulo: HTMLElement) {
 	const clon = articulo.cloneNode(true) as HTMLElement;
 	clon.querySelectorAll("[data-no-pdf]").forEach((el) => el.remove());
+	// Las fotos van achicadas: a su tamaño en la hoja 1600 px sobran, y el PDF tiene que entrar en Kommo (9 MB).
 	for (const img of clon.querySelectorAll("img")) {
-		if (img.src.startsWith("blob:")) img.src = await aDataUrl(img.src);
+		if (img.src.startsWith("blob:")) img.src = await aDataUrl(await achicar(await (await fetch(img.src)).blob(), 1600, 0.82));
 	}
 	// Dentro de Kommo la vista previa vive en un Shadow DOM con sus propias hojas de estilo.
 	const raiz = articulo.getRootNode() as Document | ShadowRoot;
@@ -153,8 +154,39 @@ export async function htmlDelInvoice(articulo: HTMLElement) {
 	return `<!doctype html><html lang="es"><head><meta charset="utf-8"><style>${css}</style><style>${impresion}</style></head><body>${clon.outerHTML}</body></html>`;
 }
 
-async function aDataUrl(url: string) {
-	const blob = await (await fetch(url)).blob();
+// La imagen como JPEG de `lado` px como máximo (fondo blanco por si tenía transparencia). Si no se puede
+// leer (formato que el navegador no abre), queda la original.
+export async function achicar(blob: Blob, lado: number, calidad: number): Promise<Blob> {
+	let bmp: ImageBitmap;
+	try {
+		bmp = await createImageBitmap(blob);
+	} catch {
+		return blob;
+	}
+	const escala = Math.min(1, lado / Math.max(bmp.width, bmp.height));
+	const lienzo = document.createElement("canvas");
+	lienzo.width = Math.round(bmp.width * escala);
+	lienzo.height = Math.round(bmp.height * escala);
+	const ctx = lienzo.getContext("2d")!;
+	ctx.fillStyle = "#fff";
+	ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+	ctx.drawImage(bmp, 0, 0, lienzo.width, lienzo.height);
+	bmp.close();
+	const jpeg = await new Promise<Blob | null>((ok) => lienzo.toBlob(ok, "image/jpeg", calidad));
+	return jpeg && jpeg.size < blob.size ? jpeg : blob;
+}
+
+// Una imagen de más de 9 MB no entra en Kommo: se comprime (cada vez más chica) hasta que entre.
+export async function paraKommo(archivo: File): Promise<File> {
+	if (archivo.size <= MAX_ARCHIVO) return archivo;
+	for (const [lado, calidad] of [[4000, 0.9], [3000, 0.85], [2000, 0.8]] as const) {
+		const jpeg = await achicar(archivo, lado, calidad);
+		if (jpeg.size <= MAX_ARCHIVO) return new File([jpeg], archivo.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+	}
+	return archivo;
+}
+
+async function aDataUrl(blob: Blob) {
 	return new Promise<string>((ok, mal) => {
 		const lector = new FileReader();
 		lector.onload = () => ok(lector.result as string);

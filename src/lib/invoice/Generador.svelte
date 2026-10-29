@@ -2,7 +2,7 @@
 	import { CLAUSULAS, CORTES, etiquetasInvoice, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, pendientes, textoClausula, totales, type Borrador, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
 	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
-	import { ErrorServidor, MAX_ARCHIVO, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
+	import { ErrorServidor, MAX_ARCHIVO, paraKommo, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
 	import { onMount, tick, untrack } from "svelte";
 
 	// `flotante`: ventana sobre la tarjeta del lead en Kommo. `disenoHref`: enlace al editor del diseño, si lo hay.
@@ -152,13 +152,15 @@
 		const archivos = [...(input.files ?? [])];
 		input.value = "";
 		avisoImagenes = "";
-		for (const f of archivos) {
-			if (f.size > MAX_ARCHIVO) {
-				avisoImagenes = `${f.name} pesa ${(f.size / 1024 / 1024).toFixed(1)} MB: el máximo es ${MAX_ARCHIVO / 1024 / 1024} MB por imagen.`;
-				continue;
-			}
+		for (const original of archivos) {
 			subiendo++;
 			try {
+				// Kommo no acepta archivos de más de 9 MB: las fotos más pesadas se comprimen antes de subir.
+				const f = await paraKommo(original);
+				if (f.size > MAX_ARCHIVO) {
+					avisoImagenes = `${original.name} pesa ${(original.size / 1024 / 1024).toFixed(1)} MB y no se pudo achicar a ${MAX_ARCHIVO / 1024 / 1024} MB.`;
+					continue;
+				}
 				if (!hayServidor()) throw new ErrorServidor("sin servidor", 503);
 				// Cada imagen va a un campo "Imagen N" de la pestaña "Imágenes de la pieza" (el widget lo crea si falta).
 				const campo = kommo ? await kommo.campoImagenLibre(lead.id) : undefined;
@@ -167,11 +169,11 @@
 				urls[img.uuid] = URL.createObjectURL(f);
 				d.imagenes.push(img.uuid);
 			} catch (err) {
-				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${f.name} a Kommo${err instanceof Error && err.message ? `: ${err.message}` : ""}.`;
+				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${original.name} a Kommo${err instanceof Error && err.message ? `: ${err.message}` : ""}.`;
 				else {
 					// Sin Kommo en el servidor: la imagen sirve para este invoice, pero no queda guardada en el lead.
 					const id = `local-${crypto.randomUUID()}`;
-					locales.push({ id, url: URL.createObjectURL(f) });
+					locales.push({ id, url: URL.createObjectURL(original) });
 					d.imagenes.push(id);
 					avisoImagenes = "Kommo no está configurado en el servidor: las imágenes no quedan guardadas en el lead.";
 				}
