@@ -274,6 +274,11 @@ en inglés o español.
 3. Que Kommo acepte varios campos con el mismo nombre (`*!*`, uno por grupo).
 
 **Dudas del documento:** la lista de campos por anillo trae "Metal" dos veces (se creó una sola) y trae "Talla" y "Size";
-se crearon los dos y los dos se llenan con la talla de la pieza. La skill `ux-heuristics` que pide el documento no está
-instalada, así que el análisis de usabilidad con ella quedó pendiente.
+se crearon los dos y los dos se llenan con la talla de la pieza.
+
+**Análisis de usabilidad (skill `ux-heuristics`, 7/10 antes):** se corrigió todo lo encontrado. Quitar una pieza, piedra,
+depósito, anillo o fila de la orden ya no pregunta "¿seguro?": muestra "Deshacer" unos segundos. El pie dice qué falta
+("el tipo de la pieza 2", no "pieza"). Los botones de pieza bajo cada imagen tienen rótulo y son más grandes. En la orden,
+lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que la opción queda para todos y en Kommo.
+"Ocultar índice" en vez de "Ocultar", y menos texto en las ayudas.
 

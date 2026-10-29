@@ -180,8 +180,26 @@
 		if (kommo) Promise.resolve(kommo.asegurarAnillos(d.piezas.length)).catch((e) => (avisoCampos = `No se pudo crear el grupo del anillo ${d.piezas.length} en Kommo: ${e}`));
 	}
 	function quitarAnillo(i: number) {
-		if (!confirm(`¿Quitar el anillo ${i + 1}? También sale del invoice.`)) return;
-		d.piezas.splice(i, 1);
+		const [p] = d.piezas.splice(i, 1);
+		quitado(`Quitaste el anillo ${i + 1} (también del invoice).`, () => d.piezas.splice(i, 0, p));
+	}
+	function quitarFila(campos: string[], i: number, nombreFila: string) {
+		const [clave] = campos.splice(i, 1);
+		quitado(`Quitaste ${nombreFila}.`, () => campos.splice(i, 0, clave));
+	}
+
+	// Quitar no pregunta: deja deshacerlo unos segundos (una pieza, una piedra, un depósito).
+	let deshacer: { texto: string; restaurar: () => void } | null = $state(null);
+	let esperaDeshacer: ReturnType<typeof setTimeout> | undefined;
+	function quitado(texto: string, restaurar: () => void) {
+		clearTimeout(esperaDeshacer);
+		deshacer = { texto, restaurar };
+		esperaDeshacer = setTimeout(() => (deshacer = null), 8000);
+	}
+	function hacerDeshacer() {
+		deshacer?.restaurar();
+		deshacer = null;
+		clearTimeout(esperaDeshacer);
 	}
 
 	// Imágenes de cada anillo: se eligen de las del lead o se suben (van a Kommo, como en el invoice).
@@ -271,11 +289,14 @@
 <!-- Fila editable: el nombre en el idioma de la orden, el valor (lo del invoice como sugerencia) y la x para quitarla. -->
 {#snippet fila(c: CampoOrden, valor: string, sugerido: string, escribir: (v: string) => void, quitar: () => void, soloLectura = false)}
 	<li class="grid grid-cols-[8.5rem_1fr_auto] items-center gap-2">
-		<span class="truncate text-xs font-semibold text-slate-600" title={nombre(c)}>{nombre(c)}</span>
+		<span class="flex min-w-0 flex-col text-xs font-semibold text-slate-600" title={nombre(c)}>
+			<span class="truncate">{nombre(c)}</span>
+			{#if sugerido && !valor}<span class="w-fit rounded bg-sky-50 px-1 text-[10px] font-semibold text-sky-700 ring-1 ring-sky-200">del invoice</span>{/if}
+		</span>
 		{#if soloLectura}
 			<p class="truncate rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-600">{sugerido || "—"}</p>
 		{:else}
-			<input class={input} value={valor} placeholder={sugerido} oninput={(e) => escribir(e.currentTarget.value)} aria-label={nombre(c)} />
+			<input class="{input} placeholder:text-slate-600" value={valor} placeholder={sugerido} oninput={(e) => escribir(e.currentTarget.value)} aria-label={nombre(c)} />
 		{/if}
 		<button type="button" onclick={quitar} class={btnX} aria-label="Quitar {nombre(c)} de la orden" title="Quitar de esta orden">{@render x()}</button>
 	</li>
@@ -305,7 +326,7 @@
 {/snippet}
 
 <main class="flex flex-col overflow-hidden p-0 text-slate-800 sm:p-4 lg:p-6 {flotante ? 'fixed inset-0 bg-[#0b0f2a]/50' : 'h-dvh bg-km-canvas'}" role={flotante ? "dialog" : undefined} aria-modal={flotante || undefined} aria-label="Orden de producción">
-	<div class="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col overflow-hidden bg-white shadow-xl sm:rounded-xl">
+	<div class="relative mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col overflow-hidden bg-white shadow-xl sm:rounded-xl">
 		<header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 px-5 py-3 sm:px-6">
 			<div class="grid size-9 shrink-0 place-items-center rounded-md bg-rj-navy text-[13px] font-semibold text-rj-gold" style="font-family: Georgia, serif">RJ</div>
 			<div class="min-w-0 flex-1">
@@ -343,7 +364,7 @@
 					</label>
 				</div>
 				<p class="mb-5 rounded-md bg-rj-gold-soft/70 px-3 py-2 text-xs text-[#6f5530]">
-					Lo que viene del <b>invoice</b> (cliente, fechas, pagos, cada pieza) aparece como sugerencia en gris: escribe encima solo si en la orden debe decir otra cosa. Al generar, todo queda en la pestaña <b>Orden</b> del lead, junto con el PDF.
+					Lo marcado <b>del invoice</b> ya está lleno; escribe encima solo si la orden debe decir otra cosa. Al generar, todo queda en la pestaña <b>Orden</b> del lead.
 				</p>
 
 				<!-- Order Details -->
@@ -352,7 +373,7 @@
 					<ul class="space-y-2">
 						{#each d.orden.campos as clave, i (clave)}
 							{@const c = campoDe(catalogoPedido, clave)}
-							{@const quitar = () => d.orden.campos.splice(i, 1)}
+							{@const quitar = () => quitarFila(d.orden.campos, i, nombre(c))}
 							{#if clave === "pagos"}
 								{@render fila(c, "", t.depositos.map((x, j) => `${pago(j)}: ${money(x.montoCalc)}`).join(" · "), () => {}, quitar, true)}
 							{:else}
@@ -381,7 +402,7 @@
 							<div id="anillo-{p.id}" class="border-t border-slate-100 px-4 pt-3 pb-4">
 								<ul class="space-y-2">
 									{#each p.orden.campos as clave, j (clave)}
-										{@render fila(campoDe(catalogoAnillo, clave), p.orden.valores[clave] ?? "", ["tipo", "size", "metal", "grabado", "notas", "halo", "central"].includes(clave) ? valorAnillo({ ...p, orden: { ...p.orden, valores: {} } }, clave) : "", (v) => (p.orden.valores[clave] = v), () => p.orden.campos.splice(j, 1))}
+										{@render fila(campoDe(catalogoAnillo, clave), p.orden.valores[clave] ?? "", ["tipo", "size", "metal", "grabado", "notas", "halo", "central"].includes(clave) ? valorAnillo({ ...p, orden: { ...p.orden, valores: {} } }, clave) : "", (v) => (p.orden.valores[clave] = v), () => quitarFila(p.orden.campos, j, nombre(campoDe(catalogoAnillo, clave))))}
 									{/each}
 								</ul>
 								{@render agregar(catalogoAnillo, p.orden.campos, String(p.id), "anillo")}
@@ -437,6 +458,15 @@
 				<OrdenPreview titulo={d.orden.idioma === "es" ? "Detalles de la orden" : "Order Details"} pedido={filasPedido} {anillos} bind:elemento={articulo} />
 			</div>
 		</div>
+
+		{#if deshacer}
+			<div class="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex justify-center px-4" aria-live="polite">
+				<p class="pointer-events-auto flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg">
+					{deshacer.texto}
+					<button type="button" onclick={hacerDeshacer} class="rounded px-1.5 py-0.5 font-semibold text-rj-gold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-rj-gold">Deshacer</button>
+				</p>
+			</div>
+		{/if}
 
 		<footer class="flex flex-wrap items-center gap-3 border-t border-slate-200 bg-white px-5 py-3 sm:px-6">
 			<p class="min-w-0 flex-1 text-sm" aria-live="polite">

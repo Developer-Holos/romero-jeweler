@@ -144,13 +144,30 @@
 	}
 
 	function quitarPieza(i: number) {
-		const p = d.piezas[i];
-		const conDatos = p.tipo || p.piedras.length || p.grabado || p.notas || p.imagenes.length;
-		if (conDatos && !confirm(`¿Quitar la pieza ${i + 1} (${tituloPieza(p)})? También sale de la orden de producción.`)) return;
-		d.piezas.splice(i, 1);
+		const [p] = d.piezas.splice(i, 1);
+		quitado(`Quitaste la pieza ${i + 1}${p.tipo ? ` (${p.tipo})` : ""}.`, () => d.piezas.splice(i, 0, p));
+	}
+
+	function quitarPiedra(p: Pieza, j: number) {
+		const [x] = p.piedras.splice(j, 1);
+		quitado(`Quitaste la piedra ${x.posicion.toLowerCase()} (${x.tipo}).`, () => p.piedras.splice(j, 0, x));
 	}
 
 	const resumenPieza = (p: Pieza) => [p.tipo, metalCorto(p), p.piedras.length ? `${p.piedras.length} ${p.piedras.length === 1 ? "piedra" : "piedras"}` : ""].filter(Boolean).join(" · ");
+
+	// Quitar no pregunta: deja deshacerlo unos segundos (una pieza, una piedra, un depósito).
+	let deshacer: { texto: string; restaurar: () => void } | null = $state(null);
+	let esperaDeshacer: ReturnType<typeof setTimeout> | undefined;
+	function quitado(texto: string, restaurar: () => void) {
+		clearTimeout(esperaDeshacer);
+		deshacer = { texto, restaurar };
+		esperaDeshacer = setTimeout(() => (deshacer = null), 8000);
+	}
+	function hacerDeshacer() {
+		deshacer?.restaurar();
+		deshacer = null;
+		clearTimeout(esperaDeshacer);
+	}
 
 	// ─── Opciones personalizadas (metal, quilates, piedras…) ─────────────────
 	// Quedan para todos los clientes (en la app) y como opción del campo de Kommo de cada anillo.
@@ -300,9 +317,11 @@
 	}
 
 	function quitarDeposito(i: number) {
-		const [quitado] = d.depositos.splice(i, 1);
-		if (quitado.id === d.cobrarAhora) d.cobrarAhora = d.depositos[0].id;
-		if (!d.depositos.some((x) => x.modo === "auto")) d.depositos[d.depositos.length - 1].modo = "auto";
+		const antes = { depositos: $state.snapshot(d.depositos), cobrarAhora: d.cobrarAhora };
+		const [x] = d.depositos.splice(i, 1);
+		if (x.id === d.cobrarAhora) d.cobrarAhora = d.depositos[0].id;
+		if (!d.depositos.some((y) => y.modo === "auto")) d.depositos[d.depositos.length - 1].modo = "auto";
+		quitado(`Quitaste ${x.nombre}.`, () => Object.assign(d, antes));
 	}
 
 	const TONOS_DEPOSITO = ["#b08d57", "#d4bc94", "#8a6a3a", "#e6d8bf"];
@@ -353,6 +372,7 @@
 			<input class="{input} w-48 min-w-0 flex-1" bind:value={textoOtra} placeholder={ejemplo} aria-label={texto} onkeydown={(e) => e.key === "Escape" && (e.stopPropagation(), (editandoOtra = null))} autofocus />
 			<button type="submit" disabled={!textoOtra.trim()} class="rounded-md bg-rj-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy disabled:opacity-50">Agregar</button>
 			<button type="button" onclick={() => (editandoOtra = null)} class="rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-rj-navy">Cancelar</button>
+			<p class="basis-full text-[11px] text-slate-500">Queda como opción para todos los clientes, también en Kommo.</p>
 		</form>
 	{:else}
 		<button type="button" onclick={() => abrirOtra(clave)} class={btnTexto}>{@render mas()}{texto}</button>
@@ -381,7 +401,7 @@
 {/snippet}
 
 <main class="flex flex-col overflow-hidden p-0 text-slate-800 sm:p-4 lg:p-6 {flotante ? 'fixed inset-0 bg-[#0b0f2a]/50' : 'h-dvh bg-km-canvas'}" role={flotante ? "dialog" : undefined} aria-modal={flotante || undefined} aria-label="Invoice para el cliente">
-	<div class="mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col overflow-hidden bg-white shadow-xl sm:rounded-xl">
+	<div class="relative mx-auto flex min-h-0 w-full max-w-[1320px] flex-1 flex-col overflow-hidden bg-white shadow-xl sm:rounded-xl">
 		<!-- Encabezado del modal del widget -->
 		<header class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-200 px-5 py-3 sm:px-6">
 			<div class="grid size-9 shrink-0 place-items-center rounded-md bg-rj-navy text-[13px] font-semibold text-rj-gold" style="font-family: Georgia, serif">RJ</div>
@@ -419,7 +439,7 @@
 			<nav class="hidden shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 py-3 xl:flex {navPlegada ? 'w-12 items-center px-1.5' : 'w-52 px-3'}" aria-label="Secciones del invoice">
 				<button type="button" onclick={() => (navPlegada = !navPlegada)} aria-expanded={!navPlegada} class="mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-white hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-rj-navy {navPlegada ? '' : 'self-end'}" title={navPlegada ? "Mostrar el índice" : "Ocultar el índice"}>
 					<svg class="size-4 transition-transform {navPlegada ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
-					<span class={navPlegada ? "sr-only" : ""}>{navPlegada ? "Mostrar el índice" : "Ocultar"}</span>
+					<span class={navPlegada ? "sr-only" : ""}>{navPlegada ? "Mostrar el índice" : "Ocultar índice"}</span>
 				</button>
 				<ul class="space-y-0.5 {navPlegada ? 'w-full' : ''}">
 					{#each SECCIONES as s, i (s.id)}
@@ -504,7 +524,7 @@
 				{#snippet piezas()}
 					<div class="space-y-3">
 						{#if !d.piezas.length}
-							<p class="rounded-md border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">Todavía no hay piezas. Agrega la primera: cada pieza es un anillo de la orden de producción.</p>
+							<p class="rounded-md border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">Aún no hay piezas.</p>
 						{/if}
 						<ol class="space-y-3">
 							{#each d.piezas as p, i (p.id)}
@@ -571,7 +591,7 @@
 																	<span class="min-w-0 flex-1 truncate"><b class="font-semibold text-slate-800">{x.posicion}</b> <span class="text-slate-500">· {[x.cantidad !== "1" ? x.cantidad : "", x.tipo, x.corte, x.tamano].filter(Boolean).join(" · ")}</span></span>
 																	{@render chevron(piedraAbierta)}
 																</button>
-																<button type="button" onclick={() => p.piedras.splice(j, 1)} class="shrink-0 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600" aria-label="Quitar la piedra {j + 1}">Quitar</button>
+																<button type="button" onclick={() => quitarPiedra(p, j)} class="shrink-0 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600" aria-label="Quitar la piedra {j + 1}">Quitar</button>
 															</div>
 															{#if piedraAbierta}
 																<div id="piedra-{x.id}" class="space-y-3 border-t border-slate-200 px-3 pt-3 pb-3">
@@ -660,7 +680,7 @@
 						{#if avisoOpciones}<p class="text-xs text-amber-800" aria-live="polite">{avisoOpciones}</p>{/if}
 					</div>
 				{/snippet}
-				{@render seccion("pieza", "Piezas", "Lo que se fabrica. Cada pieza queda como un anillo en la pestaña Orden del lead.", piezas)}
+				{@render seccion("pieza", "Piezas", "Cada pieza es un anillo de la orden de producción.", piezas)}
 
 				{#snippet pago()}
 					<div class="space-y-5">
@@ -810,7 +830,7 @@
 				{#snippet imagenes()}
 					<div class="space-y-3">
 						{#if d.piezas.length > 1}
-							<p class="text-xs text-slate-500">Toca los números de cada imagen para elegir en qué pieza va. El orden en que las eliges es el orden en el invoice.</p>
+							<p class="text-xs text-slate-500">Bajo cada imagen, elige en qué pieza va.</p>
 						{/if}
 						<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
 							{#each galeria as a (a.id)}
@@ -831,10 +851,11 @@
 											{#if a.url}<img src={a.url} alt="" class="size-full object-cover" />{:else}<span class="grid size-full place-items-center text-[10px] text-slate-400">Cargando…</span>{/if}
 										</div>
 										{#if d.piezas.length}
-											<div class="flex flex-wrap gap-1 px-1.5 pt-1" role="group" aria-label="Piezas que usan {a.nombre}">
+											<div class="flex flex-wrap items-center gap-1 px-1.5 pt-1.5" role="group" aria-label="Piezas que usan {a.nombre}">
+												<span class="text-[10px] font-semibold text-slate-500">Pieza</span>
 												{#each d.piezas as p, i (p.id)}
 													{@const sel = p.imagenes.includes(a.id)}
-													<button type="button" aria-pressed={sel} onclick={() => alternarImagen(p, a.id)} title="{sel ? 'Quitar de' : 'Usar en'} la pieza {i + 1}" class="grid size-6 place-items-center rounded-full text-[11px] font-bold focus-visible:outline-2 focus-visible:outline-rj-navy {sel ? 'bg-rj-navy text-white' : 'text-slate-500 ring-1 ring-slate-300 hover:ring-slate-400'}">{i + 1}</button>
+													<button type="button" aria-pressed={sel} onclick={() => alternarImagen(p, a.id)} title="{sel ? 'Quitar de' : 'Usar en'} la pieza {i + 1}{p.tipo ? ` (${p.tipo})` : ''}" aria-label="{sel ? 'Quitar de' : 'Usar en'} la pieza {i + 1}" class="grid size-7 place-items-center rounded-full text-xs font-bold focus-visible:outline-2 focus-visible:outline-rj-navy {sel ? 'bg-rj-navy text-white' : 'text-slate-500 ring-1 ring-slate-300 hover:ring-slate-400'}">{i + 1}</button>
 												{/each}
 											</div>
 										{/if}
@@ -858,7 +879,7 @@
 						{#if avisoImagenes}<p class="text-xs text-amber-800">{avisoImagenes}</p>{/if}
 					</div>
 				{/snippet}
-				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas se guardan en la pestaña «Imágenes de la pieza» del lead.", imagenes)}
+				{@render seccion("imagenes", "Imágenes de referencia", "Las del lead en Kommo; las que subas se guardan en el lead.", imagenes)}
 
 				{#snippet condiciones()}
 					<div class="space-y-4">
@@ -929,7 +950,7 @@
 						</div>
 					</div>
 				{/snippet}
-				{@render seccion("condiciones", "Condiciones y políticas", "Cada una trae el texto estándar de Romero Jeweler. Actívala, ajusta sus valores o edita el texto solo para este invoice.", condiciones)}
+				{@render seccion("condiciones", "Condiciones y políticas", "Texto estándar de Romero Jeweler; edítalo solo para este invoice.", condiciones)}
 			</div>
 
 			<!-- Vista previa en vivo -->
@@ -950,6 +971,15 @@
 				</div>
 			</div>
 		</div>
+
+		{#if deshacer}
+			<div class="pointer-events-none absolute inset-x-0 bottom-16 z-20 flex justify-center px-4" aria-live="polite">
+				<p class="pointer-events-auto flex items-center gap-3 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg">
+					{deshacer.texto}
+					<button type="button" onclick={hacerDeshacer} class="rounded px-1.5 py-0.5 font-semibold text-rj-gold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-rj-gold">Deshacer</button>
+				</p>
+			</div>
+		{/if}
 
 		<!-- Barra de acciones -->
 		<footer class="flex flex-wrap items-center gap-3 border-t border-slate-200 bg-white px-5 py-3 sm:px-6">
@@ -974,7 +1004,7 @@
 				{:else if bloqueantes.length}
 					<p class="text-red-700">
 						Falta completar:
-						{#each bloqueantes as b, i (b.msg)}<button type="button" onclick={() => ir(b.sec)} class="font-semibold underline underline-offset-2">{b.msg.replace(/^Falta (agregar )?(el |la |una )?/, "")}</button>{i < bloqueantes.length - 1 ? ", " : ""}{/each}
+						{#each bloqueantes as b, i (b.msg)}<button type="button" onclick={() => ir(b.sec)} class="font-semibold underline underline-offset-2">{b.msg.replace(/^Falta /, "")}</button>{i < bloqueantes.length - 1 ? ", " : ""}{/each}
 					</p>
 				{:else if faltan.length}
 					<p class="text-amber-700">
