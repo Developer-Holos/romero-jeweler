@@ -22,8 +22,8 @@ define(['jquery'], function ($) {
     // API del widget en la app publicada en Railway.
     var SERVIDOR_URL = 'https://romero-jeweler-production.up.railway.app/api';
 
-    // Campos de producto de los leads en la cuenta romerojeweler (Ajustes → Campos).
-    // Si un id no aparece en el lead (otra cuenta, campo recreado), se busca por nombre.
+    // Campos sueltos de producto de la cuenta romerojeweler (de antes de los grupos por anillo): si el lead los
+    // tiene llenos, precargan la primera pieza. Si un id no aparece en el lead, se busca por nombre.
     var CAMPOS_PRODUCTO = {
       metal: { id: 133508, nombre: 'metal' },
       quilates: { id: 133510, nombre: 'quilates' },
@@ -108,17 +108,45 @@ define(['jquery'], function ($) {
     // ─── Pestañas y campos del lead en Kommo ───────────────────────────────────
     // Los crea el widget con la API de Kommo y la sesión del usuario (como el widget "IA Campos y Bots"):
     // busca por nombre y crea solo lo que falta, así que se puede llamar las veces que sea.
-    var PESTANA_ORDEN = 'Orden de producción';
-    var CAMPOS_ORDEN = [
+    //
+    // Todo va en la pestaña "Orden" (las viejas "Widget Invoice" y "Orden de producción" se vacían en ella y se
+    // borran): primero los campos del pedido y, después, un grupo por anillo con el formato del widget Group Fields:
+    //   *Anillo °1*      ← abre el grupo (no se llena)
+    //   [1] Metal …      ← los campos del anillo 1
+    //   *!*              ← cierra el grupo
+    // Los grupos son de la cuenta; Group Fields muestra en cada lead tantos como diga "N° de Anillos".
+    var PESTANA = 'Orden';
+    var PESTANAS_VIEJAS = ['Widget Invoice', 'Orden de producción'];
+    var CAMPO_ANILLOS = { id: 283974, nombre: 'N° de Anillos' };
+    var CAMPOS_PEDIDO = [
       { clave: 'orden', nombre: 'Order #', tipo: 'text' },
       { clave: 'stuller', nombre: 'Stuller O.#', tipo: 'text' },
       { clave: 'nivoda', nombre: 'Nivoda O.#', tipo: 'text' },
-      { clave: 'ancho', nombre: 'Width bottom', tipo: 'text' },
-      { clave: 'grosor', nombre: 'Thickness', tipo: 'text' },
-      { clave: 'peso', nombre: 'Est. Weight', tipo: 'text' },
-      { clave: 'cabeza', nombre: 'Head style', tipo: 'text' },
       { clave: 'pdf', nombre: 'Orden de producción (PDF)', tipo: 'file' }
     ];
+    // Igual que KOMMO_ANILLO de src/lib/invoice/campos.ts. `lista`: opciones del campo (de /api/opciones).
+    var CAMPOS_ANILLO = [
+      { clave: 'metal', nombre: 'Metal', tipo: 'select', lista: 'metales' },
+      { clave: 'quilates', nombre: 'Quilates', tipo: 'select', lista: 'quilates' },
+      { clave: 'piedra', nombre: 'Piedra', tipo: 'multiselect', lista: 'piedras' },
+      { clave: 'talla', nombre: 'Talla', tipo: 'text' },
+      { clave: 'tipo', nombre: 'Ring Type', tipo: 'select', lista: 'tipos' },
+      { clave: 'size', nombre: 'Size', tipo: 'text' },
+      { clave: 'ancho', nombre: 'Width', tipo: 'text' },
+      { clave: 'grosor', nombre: 'Thickness', tipo: 'text' },
+      { clave: 'peso', nombre: 'Est. Weight', tipo: 'text' },
+      { clave: 'grabado', nombre: 'Engraving', tipo: 'text' },
+      { clave: 'cabeza', nombre: 'Head style', tipo: 'text' },
+      { clave: 'halo', nombre: 'Halo Stones', tipo: 'text' },
+      { clave: 'notas', nombre: 'Notes', tipo: 'textarea' }
+    ];
+    var CIERRE = '*!*';
+    var cabecera = function (n) { return '*Anillo °' + n + '*'; };
+    var grupoGF = function (n) { return 'Anillo °' + n; };
+    var numeroCabecera = function (nombre) { var m = /^\*Anillo °(\d+)\*$/.exec(nombre); return m ? Number(m[1]) : 0; };
+    // Orden dentro de la pestaña: el pedido arriba, después cada anillo en su tramo de 100.
+    var base = function (n) { return 1000 + n * 100; };
+
     var PESTANA_IMAGENES = 'Imágenes de la pieza';
     var PREFIJO_IMAGEN = 'Imagen ';
     var IMAGENES_INICIALES = 3;
@@ -148,7 +176,33 @@ define(['jquery'], function ($) {
           return siguiente ? pagina(siguiente) : items;
         });
       }
-      return pagina(ruta + '?limit=250');
+      return pagina(ruta + (ruta.indexOf('?') === -1 ? '?' : '&') + 'limit=250');
+    };
+
+    // De a 40 por pedido: Kommo limita cuántos campos se crean o cambian en uno solo.
+    this.enTandas = function (metodo, ruta, lista) {
+      var hechos = [];
+      var tanda = function (i) {
+        if (i >= lista.length) return $.Deferred().resolve(hechos).promise();
+        return self.kommoApi(metodo, ruta, lista.slice(i, i + 40)).then(function (d) {
+          hechos = hechos.concat((d && d._embedded && d._embedded.custom_fields) || []);
+          return tanda(i + 40);
+        });
+      };
+      return tanda(0);
+    };
+
+    // Opciones compartidas (metales, quilates, piedras… y campos extra de la orden), desde la app.
+    this.opciones = function () {
+      var servidor = self.servidor();
+      return $.ajax({
+        url: servidor.url + '/opciones',
+        dataType: 'json',
+        timeout: 30000,
+        headers: servidor.clave ? { 'X-Widget-Key': servidor.clave } : {}
+      }).then(function (d) { return d.opciones; }, function () {
+        return $.Deferred().reject('No se pudieron leer las opciones de la app').promise();
+      });
     };
 
     this.asegurarPestana = function (nombre) {
@@ -159,6 +213,242 @@ define(['jquery'], function ($) {
           .then(function (d) { return d._embedded.custom_field_groups[0].id; });
       });
     };
+
+    // Las pestañas viejas se vacían en "Orden" (sus campos y lo que tienen guardado se conservan) y se borran.
+    this.migrarPestanas = function (ordenId) {
+      return $.when(
+        self.todos('/api/v4/leads/custom_fields/groups', 'custom_field_groups'),
+        self.todos('/api/v4/leads/custom_fields', 'custom_fields')
+      ).then(function (grupos, campos) {
+        var viejas = grupos.filter(function (g) { return PESTANAS_VIEJAS.indexOf(g.name) !== -1; });
+        if (!viejas.length) return;
+        var mover = campos.filter(function (c) {
+          return viejas.some(function (g) { return g.id === c.group_id; });
+        }).map(function (c, i) { return { id: c.id, group_id: ordenId, sort: 100 + i }; });
+        return self.enTandas('PATCH', '/api/v4/leads/custom_fields', mover).then(function () {
+          return $.when.apply($, viejas.map(function (g) {
+            return self.kommoApi('DELETE', '/api/v4/leads/custom_fields/groups/' + g.id);
+          }));
+        });
+      });
+    };
+
+    var enumsDe = function (lista) {
+      return lista.map(function (v, i) { return { value: v, sort: (i + 1) * 10 }; });
+    };
+    var mismoTexto = function (a, b) { return String(a).trim().toLowerCase() === String(b).trim().toLowerCase(); };
+
+    // Lo que hay en la pestaña "Orden", creando lo que falte: los campos del pedido, los grupos de los anillos
+    // 1…`cantidad` (y completa los que ya existan), y las opciones de los campos de selección. `extra`: un campo
+    // recién creado en la orden ({ donde, clave, nombre }) que puede no estar todavía en las opciones de la app.
+    // Devuelve { pedido: { clave: campo }, anillos: { n: { clave: campo } }, anillosCampo, catalogo }.
+    this.estructura = function (cantidad, extra) {
+      return $.when(self.opciones(), self.asegurarPestana(PESTANA)).then(function (op, grupoId) {
+        return self.migrarPestanas(grupoId).then(function () {
+          return self.todos('/api/v4/leads/custom_fields', 'custom_fields');
+        }).then(function (todos) {
+          var enPestana = todos.filter(function (c) { return c.group_id === grupoId; });
+          var porNombre = function (nombre) { return enPestana.filter(function (c) { return c.name === nombre; })[0]; };
+          var extrasAnillo = (op.camposAnillo || []).slice();
+          var extrasPedido = (op.camposPedido || []).slice();
+          if (extra && extra.donde === 'anillo' && !extrasAnillo.some(function (c) { return c.clave === extra.clave; })) extrasAnillo.push(extra);
+          if (extra && extra.donde === 'pedido' && !extrasPedido.some(function (c) { return c.clave === extra.clave; })) extrasPedido.push(extra);
+          var catalogoAnillo = CAMPOS_ANILLO.concat(extrasAnillo.map(function (c) { return { clave: c.clave, nombre: c.nombre, tipo: 'text' }; }));
+          var catalogoPedido = CAMPOS_PEDIDO.concat(extrasPedido.map(function (c) { return { clave: c.clave, nombre: c.nombre, tipo: 'text' }; }));
+
+          var nuevos = [];
+          catalogoPedido.forEach(function (c, i) {
+            if (!porNombre(c.nombre)) nuevos.push({ name: c.nombre, type: c.tipo, group_id: grupoId, sort: 10 + i });
+          });
+          var existentes = enPestana.map(function (c) { return numeroCabecera(c.name); }).filter(Boolean);
+          var hasta = Math.max(cantidad || 0, existentes.length ? Math.max.apply(null, existentes) : 0);
+          var creados = [];
+          for (var n = 1; n <= hasta; n++) {
+            var hayCabecera = !!porNombre(cabecera(n));
+            if (!hayCabecera && n > cantidad) continue;
+            if (!hayCabecera) { nuevos.push({ name: cabecera(n), type: 'text', group_id: grupoId, sort: base(n) }); creados.push(n); }
+            catalogoAnillo.forEach(function (c, k) {
+              if (porNombre('[' + n + '] ' + c.nombre)) return;
+              var campo = { name: '[' + n + '] ' + c.nombre, type: c.tipo, group_id: grupoId, sort: base(n) + (k < CAMPOS_ANILLO.length ? 1 + k : 50 + k) };
+              if (c.lista) campo.enums = enumsDe(op[c.lista] || []);
+              nuevos.push(campo);
+            });
+            var desde = base(n);
+            var hayCierre = enPestana.some(function (c) { return c.name === CIERRE && c.sort > desde && c.sort < desde + 100; });
+            if (!hayCierre) nuevos.push({ name: CIERRE, type: 'text', group_id: grupoId, sort: desde + 99 });
+          }
+
+          return self.enTandas('POST', '/api/v4/leads/custom_fields', nuevos).then(function (hechos) {
+            enPestana = enPestana.concat(hechos);
+            // Campos de selección a los que les falta alguna opción (agregada después en la app).
+            var cambios = [];
+            enPestana.forEach(function (c) {
+              var m = /^\[(\d+)\] (.+)$/.exec(c.name);
+              var def = m && CAMPOS_ANILLO.filter(function (x) { return x.nombre === m[2] && x.lista; })[0];
+              if (!def) return;
+              var actuales = c.enums || [];
+              var faltan = (op[def.lista] || []).filter(function (v) { return !actuales.some(function (e) { return mismoTexto(e.value, v); }); });
+              if (faltan.length) cambios.push({ id: c.id, enums: actuales.concat(faltan.map(function (v, i) { return { value: v, sort: (actuales.length + i + 1) * 10 }; })) });
+            });
+            return self.enTandas('PATCH', '/api/v4/leads/custom_fields', cambios).then(function (cambiados) {
+              cambiados.forEach(function (c) {
+                enPestana = enPestana.map(function (x) { return x.id === c.id ? $.extend({}, x, c) : x; });
+              });
+              var mapa = { pedido: {}, anillos: {}, catalogoAnillo: catalogoAnillo, grupoId: grupoId, todos: todos.concat(hechos) };
+              catalogoPedido.forEach(function (c) { var campo = porNombreEn(enPestana, c.nombre); if (campo) mapa.pedido[c.clave] = campo; });
+              enPestana.forEach(function (c) {
+                var m = /^\[(\d+)\] (.+)$/.exec(c.name);
+                var def = m && catalogoAnillo.filter(function (x) { return x.nombre === m[2]; })[0];
+                if (!def) return;
+                (mapa.anillos[m[1]] = mapa.anillos[m[1]] || {})[def.clave] = c;
+              });
+              mapa.anillosCampo = mapa.todos.filter(function (c) { return c.id === CAMPO_ANILLOS.id; })[0] ||
+                mapa.todos.filter(function (c) { return mismoTexto(c.name, CAMPO_ANILLOS.nombre); })[0];
+              var total = Object.keys(mapa.anillos).length;
+              // Si se creó algún grupo, Group Fields tiene que saber que existe.
+              if (!creados.length) return mapa;
+              return self.actualizarGroupFields(total, mapa.anillosCampo).then(function () { return mapa; }, function (e) {
+                console.warn('[rj-invoice] No se pudo actualizar Group Fields: ' + e);
+                return mapa;
+              });
+            });
+          });
+        });
+      });
+    };
+    var porNombreEn = function (lista, nombre) { return lista.filter(function (c) { return c.name === nombre; })[0]; };
+
+    // Agrega "Anillo °1…N" a la regla de visibilidad del widget Group Fields (su ajuste ring_config:
+    // { field: "N° de Anillos", groups: ["Anillo °1", …] }), sin tocar sus otros ajustes.
+    this.actualizarGroupFields = function (total, campoAnillos) {
+      var tieneRingConfig = function (w) {
+        var t = w.settings_template || [];
+        return $.isArray(t) ? t.some(function (s) { return s && s.key === 'ring_config'; }) : !!t.ring_config;
+      };
+      return self.todos('/api/v4/widgets', 'widgets').then(function (ws) {
+        var gf = ws.filter(tieneRingConfig)[0];
+        if (!gf) return;
+        return self.kommoApi('GET', '/api/v4/widgets/' + gf.code).then(function (w) {
+          var ajustes = $.extend({}, w.settings);
+          var actual = {};
+          try { actual = JSON.parse(ajustes.ring_config || '{}') || {}; } catch (e) { actual = {}; }
+          var grupos = $.isArray(actual.groups) ? actual.groups.slice() : [];
+          var otros = grupos.filter(function (g) { return !/^Anillo °\d+$/.test(String(g).trim()); });
+          var anillos = [];
+          for (var n = 1; n <= total; n++) anillos.push(grupoGF(n));
+          var nueva = { field: actual.field || (campoAnillos && campoAnillos.name) || CAMPO_ANILLOS.nombre, groups: anillos.concat(otros) };
+          if (JSON.stringify(nueva) === JSON.stringify({ field: actual.field, groups: grupos })) return;
+          ajustes.ring_config = JSON.stringify(nueva);
+          return self.kommoApi('POST', '/api/v4/widgets/' + gf.code, { settings: ajustes });
+        });
+      });
+    };
+
+    // Valor de un campo del lead como texto (o lista, en una selección múltiple).
+    var valorDe = function (lead, campo) {
+      var c = (lead.custom_fields_values || []).filter(function (f) { return f.field_id === campo.id; })[0];
+      var vs = (c && c.values) || [];
+      if (campo.type === 'multiselect') return vs.map(function (v) { return String(v.value); });
+      return vs[0] && vs[0].value != null ? String(vs[0].value) : '';
+    };
+
+    // { cantidad, pedido: { clave: valor }, anillos: [{ clave: valor }, …] } de la pestaña "Orden" del lead.
+    this.leerOrden = function (leadId) {
+      return $.when(self.estructura(0), self.kommoApi('GET', '/api/v4/leads/' + leadId)).then(function (mapa, lead) {
+        var pedido = {};
+        Object.keys(mapa.pedido).forEach(function (k) {
+          if (mapa.pedido[k].type !== 'file') pedido[k] = valorDe(lead, mapa.pedido[k]);
+        });
+        var anillos = [];
+        Object.keys(mapa.anillos).map(Number).sort(function (a, b) { return a - b; }).forEach(function (n) {
+          var a = {};
+          Object.keys(mapa.anillos[n]).forEach(function (k) { a[k] = valorDe(lead, mapa.anillos[n][k]); });
+          anillos[n - 1] = a;
+        });
+        for (var i = 0; i < anillos.length; i++) anillos[i] = anillos[i] || {};
+        return { cantidad: mapa.anillosCampo ? Number(valorDe(lead, mapa.anillosCampo)) || 0 : 0, pedido: pedido, anillos: anillos };
+      });
+    };
+
+    // Escribe la orden en el lead: crea los grupos que falten, agrega a los campos de selección las opciones
+    // que todavía no tengan, y guarda "N° de Anillos". Devuelve { pdf: id del campo del PDF de la orden }.
+    this.guardarOrden = function (leadId, datos) {
+      return self.estructura(datos.cantidad).then(function (mapa) {
+        // Opciones nuevas que llegan en los valores (ej. un metal escrito a mano en un borrador viejo).
+        var faltan = {};
+        datos.anillos.forEach(function (a, i) {
+          var campos = mapa.anillos[i + 1] || {};
+          Object.keys(a).forEach(function (k) {
+            var c = campos[k];
+            if (!c || (c.type !== 'select' && c.type !== 'multiselect')) return;
+            [].concat(a[k] || []).forEach(function (v) {
+              if (!String(v).trim() || (c.enums || []).some(function (e) { return mismoTexto(e.value, v); })) return;
+              (faltan[c.id] = faltan[c.id] || { c: c, vs: [] }).vs.push(String(v).trim());
+            });
+          });
+        });
+        var cambios = Object.keys(faltan).map(function (id) {
+          var f = faltan[id], actuales = f.c.enums || [];
+          return { id: f.c.id, enums: actuales.concat(f.vs.map(function (v, i) { return { value: v, sort: (actuales.length + i + 1) * 10 }; })) };
+        });
+        return self.enTandas('PATCH', '/api/v4/leads/custom_fields', cambios).then(function (cambiados) {
+          var enums = {};
+          cambiados.forEach(function (c) { enums[c.id] = c.enums; });
+          var valor = function (c, v) {
+            var lista = [].concat(v == null ? [] : v).map(function (x) { return String(x).trim(); }).filter(Boolean);
+            if (!lista.length) return null; // vacío: se borra el valor del campo en Kommo
+            if (c.type !== 'select' && c.type !== 'multiselect') return [{ value: lista.join(', ') }];
+            var opciones = enums[c.id] || c.enums || [];
+            var ids = lista.map(function (x) {
+              var e = opciones.filter(function (o) { return mismoTexto(o.value, x); })[0];
+              return e ? { enum_id: e.id } : null;
+            }).filter(Boolean);
+            return ids.length ? (c.type === 'select' ? ids.slice(0, 1) : ids) : null;
+          };
+          var cuerpo = [];
+          Object.keys(datos.pedido).forEach(function (k) {
+            var c = mapa.pedido[k];
+            if (c && c.type !== 'file') cuerpo.push({ field_id: c.id, values: valor(c, datos.pedido[k]) });
+          });
+          datos.anillos.forEach(function (a, i) {
+            var campos = mapa.anillos[i + 1] || {};
+            Object.keys(a).forEach(function (k) {
+              if (campos[k]) cuerpo.push({ field_id: campos[k].id, values: valor(campos[k], a[k]) });
+            });
+          });
+          if (mapa.anillosCampo) cuerpo.push({ field_id: mapa.anillosCampo.id, values: [{ value: datos.cantidad }] });
+          return self.kommoApi('PATCH', '/api/v4/leads/' + leadId, { custom_fields_values: cuerpo }).then(function () {
+            return { pdf: mapa.pedido.pdf && mapa.pedido.pdf.id };
+          });
+        });
+      });
+    };
+
+    this.asegurarAnillos = function (cantidad) {
+      return self.estructura(cantidad).then(function () { return true; });
+    };
+
+    // Una opción nueva (metal, quilates, piedra…) va a los campos de selección de todos los anillos.
+    this.agregarOpcion = function (lista, valor) {
+      return self.estructura(0).then(function (mapa) {
+        var cambios = [];
+        Object.keys(mapa.anillos).forEach(function (n) {
+          CAMPOS_ANILLO.filter(function (c) { return c.lista === lista; }).forEach(function (def) {
+            var c = mapa.anillos[n][def.clave];
+            if (!c || (c.enums || []).some(function (e) { return mismoTexto(e.value, valor); })) return;
+            cambios.push({ id: c.id, enums: (c.enums || []).concat([{ value: valor, sort: ((c.enums || []).length + 1) * 10 }]) });
+          });
+        });
+        return self.enTandas('PATCH', '/api/v4/leads/custom_fields', cambios);
+      });
+    };
+
+    // Un campo nuevo de la orden: en el pedido, o como "[N] Nombre" en el grupo de cada anillo.
+    this.crearCampo = function (donde, clave, nombre) {
+      return self.estructura(0, { donde: donde, clave: clave, nombre: nombre }).then(function () { return true; });
+    };
+
+    var numeroImagen = function (c) { return Number(c.name.slice(PREFIJO_IMAGEN.length)) || 0; };
 
     // `faltan(campos de la pestaña)` dice qué campos crear: [{ nombre, tipo }].
     this.asegurarCampos = function (grupoId, faltan) {
@@ -171,26 +461,6 @@ define(['jquery'], function ($) {
           .then(function (d) { return enPestana.concat(d._embedded.custom_fields); });
       });
     };
-
-    // { orden: id, stuller: id, …, pdf: id } de la pestaña "Orden de producción".
-    this.camposOrden = function () {
-      return self.asegurarPestana(PESTANA_ORDEN).then(function (grupoId) {
-        return self.asegurarCampos(grupoId, function (enPestana) {
-          return CAMPOS_ORDEN.filter(function (c) {
-            return !enPestana.some(function (x) { return x.name === c.nombre; });
-          });
-        });
-      }).then(function (campos) {
-        var ids = {};
-        CAMPOS_ORDEN.forEach(function (c) {
-          var campo = campos.filter(function (x) { return x.name === c.nombre; })[0];
-          if (campo) ids[c.clave] = campo.id;
-        });
-        return ids;
-      });
-    };
-
-    var numeroImagen = function (c) { return Number(c.name.slice(PREFIJO_IMAGEN.length)) || 0; };
 
     // Campos "Imagen N" de la pestaña, al menos `cantidad`, ordenados.
     this.camposImagenes = function (cantidad) {
@@ -208,12 +478,9 @@ define(['jquery'], function ($) {
       });
     };
 
-    var valorEn = function (lead, campoId) {
-      var c = (lead.custom_fields_values || []).filter(function (f) { return f.field_id === campoId; })[0];
-      return c && c.values && c.values[0] ? c.values[0].value : null;
-    };
     var ocupado = function (lead, campoId) {
-      var v = valorEn(lead, campoId);
+      var c = (lead.custom_fields_values || []).filter(function (f) { return f.field_id === campoId; })[0];
+      var v = c && c.values && c.values[0] ? c.values[0].value : null;
       return !!(v && v.file_uuid && !v.is_deleted);
     };
 
@@ -229,43 +496,25 @@ define(['jquery'], function ($) {
       });
     };
 
-    // Valores de la pestaña "Orden de producción" del lead: { orden: '1146', ancho: '2mm', … }.
-    this.valoresOrden = function (leadId) {
-      return $.when(self.camposOrden(), self.kommoApi('GET', '/api/v4/leads/' + leadId)).then(function (ids, lead) {
-        var valores = {};
-        CAMPOS_ORDEN.forEach(function (c) {
-          if (c.tipo !== 'text' || !ids[c.clave]) return;
-          var v = valorEn(lead, ids[c.clave]);
-          valores[c.clave] = v == null ? '' : String(v);
-        });
-        return valores;
-      });
-    };
-
-    this.guardarValoresOrden = function (leadId, valores) {
-      return self.camposOrden().then(function (ids) {
-        var cuerpo = CAMPOS_ORDEN.filter(function (c) { return c.tipo === 'text' && ids[c.clave]; }).map(function (c) {
-          var v = String(valores[c.clave] || '').trim();
-          // Vacío: se borra el valor del campo en Kommo.
-          return { field_id: ids[c.clave], values: v ? [{ value: v }] : null };
-        });
-        return self.kommoApi('PATCH', '/api/v4/leads/' + leadId, { custom_fields_values: cuerpo }).then(function () { return ids; });
-      });
-    };
-
     // Lo que la app (app.js) usa de Kommo. Devuelven promesas de jQuery, que la app espera con await.
     this.kommo = function () {
       return {
         campoImagenLibre: self.campoImagenLibre,
-        valoresOrden: self.valoresOrden,
-        guardarValoresOrden: self.guardarValoresOrden
+        leerOrden: self.leerOrden,
+        guardarOrden: self.guardarOrden,
+        asegurarAnillos: self.asegurarAnillos,
+        agregarOpcion: self.agregarOpcion,
+        crearCampo: self.crearCampo
       };
     };
 
-    // Al instalar (y al guardar los ajustes): las dos pestañas con sus campos.
+    // Al instalar (y al guardar los ajustes): la pestaña "Orden" con el grupo del anillo 1, la de imágenes,
+    // y Group Fields al día.
     this.prepararKommo = function () {
-      $.when(self.camposOrden(), self.camposImagenes(IMAGENES_INICIALES)).fail(function (detalle) {
-        console.warn('[rj-invoice] No se pudieron crear las pestañas en Kommo: ' + detalle);
+      $.when(self.estructura(1), self.camposImagenes(IMAGENES_INICIALES)).then(function (mapa) {
+        return self.actualizarGroupFields(Object.keys(mapa.anillos).length, mapa.anillosCampo);
+      }).fail(function (detalle) {
+        console.warn('[rj-invoice] No se pudo preparar la pestaña Orden en Kommo: ' + detalle);
       });
     };
 

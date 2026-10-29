@@ -243,3 +243,37 @@ use la misma información que el invoice.
 
 **Por verificar:** probarla en la cuenta real con el widget instalado.
 
+## Varias piezas, pestaña "Orden" y grupos por anillo
+
+**Pedido (2026-10-29, `correcciones.md`):** varias piezas en el invoice y en la orden, todo en una pestaña "Orden"
+con un grupo de campos por anillo para el widget Group Fields, opciones personalizadas, secciones plegables y la orden
+en inglés o español.
+
+**Hecho:**
+- **Invoice:** la sección "Piezas" empieza vacía; cada pieza (tipo, metal, quilates, piedras, talla, grabado, notas) y
+  cada piedra se pliegan. Solo tipos de anillo (compromiso mujer/hombre, bodas mujer/hombre, a la medida). "+ Otro
+  metal", "+ Otro quilate", "+ Otro tipo", "+ Otra forma" y "+ Otra ubicación" quedan para todos los clientes y como
+  opción de los campos de Kommo. Todas las secciones y la barra de la izquierda se pliegan. Las imágenes se eligen por
+  pieza.
+- **Orden:** "Order Details" y un "Cad Details Ring N" por pieza, cada uno con sus imágenes. Filas por defecto como en
+  el ejemplo; "+ Agregar otro campo" (uno configurado o uno nuevo, que se crea en todos los anillos), x para quitar,
+  "+ Agregar otro anillo". Inglés o español: los nombres de las filas siempre, los valores solo si se marca.
+- **Kommo:** pestaña "Orden" con los campos del pedido y los grupos `*Anillo °N*` … `*!*` (`[N] Metal`, `[N] Quilates`,
+  `[N] Piedra`, `[N] Talla`, `[N] Ring Type`, `[N] Size`, `[N] Width`, `[N] Thickness`, `[N] Est. Weight`,
+  `[N] Engraving`, `[N] Head style`, `[N] Halo Stones`, `[N] Notes`, más los creados). Metal, Quilates y Ring Type son
+  de selección y Piedra de selección múltiple. "N° de Anillos" (283974) se guarda al generar. Al crear un grupo, el
+  widget agrega "Anillo °N" a la regla de Group Fields. Las pestañas "Widget Invoice" y "Orden de producción" se
+  vacían en "Orden" y se borran; los campos sueltos Metal/Quilates/Piedra/Talla se dejan y precargan la primera pieza.
+- Probado de punta a punta contra el Kommo simulado (instalar, 2 piezas, opciones nuevas, invoice, orden en español con
+  un campo creado y un tercer anillo, y un valor cambiado a mano en Kommo).
+
+**Por verificar en la cuenta real** (solo se probó en el simulado):
+1. Que Kommo deje mover campos de pestaña (`PATCH /api/v4/leads/custom_fields` con `group_id`) y borrar las pestañas viejas.
+2. Que `GET/POST /api/v4/widgets/{código}` lea y guarde los ajustes de Group Fields (`ring_config`) sin perder su
+   `api_key`. Si no, la regla se ajusta a mano en Group Fields.
+3. Que Kommo acepte varios campos con el mismo nombre (`*!*`, uno por grupo).
+
+**Dudas del documento:** la lista de campos por anillo trae "Metal" dos veces (se creó una sola) y trae "Talla" y "Size";
+se crearon los dos y los dos se llenan con la talla de la pieza. La skill `ux-heuristics` que pide el documento no está
+instalada, así que el análisis de usabilidad con ella quedó pendiente.
+

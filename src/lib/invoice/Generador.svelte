@@ -1,15 +1,16 @@
 <script lang="ts">
-	import { CLAUSULAS, CORTES, etiquetasInvoice, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, pendientes, textoClausula, totales, type Borrador, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
+	import { CLAUSULAS, etiquetasInvoice, tituloPieza, vinetas, MOMENTOS_PAGO, PLANES, SECCIONES, VENCIMIENTOS, agregarOpcion, aplicarKommo, borradorInicial, cargarBorrador, cargarOpciones, colorMetal, desdeProducto, draft as d, esOro, guardarBorrador, metalCorto, money, nuevaPieza, nuevaPiedra, nuevoDeposito, opciones, ordenAKommo, pendientes, piezaDesdeKommo, textoClausula, totales, type Borrador, type Deposito, type Lead, type Pieza, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
+	import type { ListaOpcion } from "./opciones";
 	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
-	import { ErrorServidor, MAX_ARCHIVO, paraKommo, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
+	import { ErrorServidor, MAX_ARCHIVO, paraKommo, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type OrdenKommo, type RedaccionInvoice } from "./servidor";
 	import { onMount, tick, untrack } from "svelte";
 
 	// `flotante`: ventana sobre la tarjeta del lead en Kommo. `disenoHref`: enlace al editor del diseño, si lo hay.
-	// `kommo`: lo que el widget hace con la API de Kommo (elegir o crear el campo de cada imagen); fuera de Kommo no está.
+	// `kommo`: lo que el widget hace con la API de Kommo (campos, grupos de anillos, opciones); fuera de Kommo no está.
 	let { lead, onclose, flotante = false, disenoHref, kommo }: { lead: Lead; onclose?: () => void; flotante?: boolean; disenoHref?: string; kommo?: Kommo } = $props();
 
-	// El borrador de cada lead vive en el servidor: cualquier asesor lo retoma desde cualquier equipo.
+	// El borrador de cada lead vive en la app: cualquier asesor lo retoma desde cualquier equipo.
 	// Mientras carga, el formulario no se muestra (el borrador en memoria puede ser de otro lead).
 	let cargando = $state(true);
 	let guardado: "ok" | "guardando" | "local" = $state("ok");
@@ -28,16 +29,38 @@
 	let generada = $state(""); // copia de los datos con los que se generó el último PDF
 	let paso = $state(0);
 
-	// Imágenes: las del lead en Kommo, más las subidas sin Kommo en el servidor (solo duran en esta ventana).
+	// Secciones plegadas, la barra de la izquierda, y qué piezas y piedras están abiertas.
+	let plegadas: Seccion[] = $state([]);
+	const CLAVE_NAV = "rj-invoice-nav-plegada";
+	let navPlegada = $state((() => {
+		try {
+			return localStorage.getItem(CLAVE_NAV) === "1";
+		} catch {
+			return false;
+		}
+	})());
+	$effect(() => {
+		try {
+			localStorage.setItem(CLAVE_NAV, navPlegada ? "1" : "0");
+		} catch {
+			// modo privado
+		}
+	});
+	let piezasAbiertas: number[] = $state([]);
+	let piedrasAbiertas: number[] = $state([]);
+	const alternarEn = (lista: number[], id: number) => (lista.includes(id) ? lista.filter((x) => x !== id) : [...lista, id]);
+
+	// Imágenes: las del lead en Kommo, más las subidas sin Kommo en la app (solo duran en esta ventana).
 	let enKommo: ImagenKommo[] = $state([]);
 	let locales: { id: string; url: string }[] = $state([]);
 	let urls: Record<string, string> = $state({});
 	let subiendo = $state(0);
 	let avisoImagenes = $state("");
+	let subirPara: number | null = $state(null);
 	const mostrar = (uuid: string) => {
 		if (!untrack(() => urls[uuid])) urlImagen(uuid).then((u) => (urls[uuid] = u), () => {});
 	};
-	$effect(() => d.imagenes.forEach((id) => !id.startsWith("local-") && mostrar(id)));
+	$effect(() => d.piezas.forEach((p) => p.imagenes.forEach((id) => !id.startsWith("local-") && !id.startsWith("muestra-") && mostrar(id))));
 	let galeria = $derived([...enKommo.map((a) => ({ id: a.uuid, nombre: a.nombre, url: urls[a.uuid] ?? "" })), ...locales.map((a, i) => ({ ...a, nombre: `Imagen ${i + 1}` }))]);
 	let subidas = $derived([...Object.entries(urls).map(([id, url]) => ({ id, url })), ...locales]);
 
@@ -56,19 +79,28 @@
 	let errorGenerar = $state("");
 	let avisoIa = $state("");
 	let avisoKommo = $state("");
+	let avisoOpciones = $state("");
 	// La redacción de la IA vale mientras el borrador no cambie (el número no cuenta: se asigna al generar).
 	const firmaDe = (b: Borrador) => JSON.stringify({ ...b, numero: "" });
-	let redaccion = $state<{ para: string; texto: Redaccion } | null>(null);
+	let redaccion = $state<{ para: string; texto: RedaccionInvoice } | null>(null);
 	let redaccionVigente = $derived(redaccion && redaccion.para === firmaDe(d) ? redaccion.texto : null);
+
+	// Lo que la pestaña "Orden" del lead ya tiene (para la primera pieza, o si el invoice aún no tiene piezas).
+	let enKommoOrden: OrdenKommo | null = null;
 
 	onMount(() => {
 		void cargarPlantillaServidor();
-		cargarBorrador(untrack(() => lead)).then(({ borrador }) => {
+		void cargarOpciones();
+		const leadActual = untrack(() => lead);
+		Promise.all([cargarBorrador(leadActual), kommo ? Promise.resolve(kommo.leerOrden(leadActual.id)).catch((e) => (console.warn("[invoice] Kommo:", e), null)) : null]).then(([{ borrador }, orden]) => {
+			enKommoOrden = orden;
+			if (orden) aplicarKommo(borrador, orden);
 			Object.assign(d, borrador);
+			if (d.piezas.length === 1) piezasAbiertas = [d.piezas[0].id];
 			cargando = false;
 		});
 		if (hayServidor())
-			imagenesDelLead(lead.id).then(
+			imagenesDelLead(leadActual.id).then(
 				(lista) => {
 					enKommo = lista;
 					lista.forEach((a) => mostrar(a.uuid));
@@ -79,13 +111,63 @@
 	});
 
 	let formEl: HTMLElement;
-	function ir(sec: Seccion) {
+	async function ir(sec: Seccion) {
 		vista = "form";
 		activa = sec;
+		plegadas = plegadas.filter((s) => s !== sec);
+		await tick();
 		const el = formEl.querySelector<HTMLElement>(`#sec-${sec}`);
 		const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 		el?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
-		el?.querySelector<HTMLElement>("input:not([type=checkbox]):not([type=radio]), select, textarea")?.focus({ preventScroll: true });
+		el?.querySelector<HTMLElement>(`#cuerpo-${sec} input:not([type=checkbox]):not([type=radio]), #cuerpo-${sec} select, #cuerpo-${sec} textarea`)?.focus({ preventScroll: true });
+	}
+
+	function alternarSeccion(sec: Seccion) {
+		plegadas = plegadas.includes(sec) ? plegadas.filter((s) => s !== sec) : [...plegadas, sec];
+	}
+
+	// ─── Piezas ───────────────────────────────────────────────────────────────
+	// La primera se precarga con lo que tenga el lead (grupo "Anillo °1" o los campos sueltos de producto);
+	// las siguientes traen las mismas filas de la orden que la anterior.
+	function agregarPieza() {
+		const anterior = d.piezas.at(-1);
+		const enKommo1 = enKommoOrden?.anillos[0];
+		const p = anterior
+			? nuevaPieza({}, anterior.orden.campos)
+			: enKommo1 && Object.values(enKommo1).some((v) => (Array.isArray(v) ? v.length : String(v ?? "").trim()))
+				? piezaDesdeKommo(enKommo1)
+				: nuevaPieza(desdeProducto(lead.producto));
+		d.piezas.push(p);
+		piezasAbiertas = [p.id];
+		// Si el lead aún no tiene el grupo de este anillo en Kommo, el widget lo crea.
+		if (kommo) Promise.resolve(kommo.asegurarAnillos(d.piezas.length)).catch((e) => (avisoOpciones = `No se pudo crear el grupo del anillo ${d.piezas.length} en Kommo: ${e}`));
+	}
+
+	function quitarPieza(i: number) {
+		const p = d.piezas[i];
+		const conDatos = p.tipo || p.piedras.length || p.grabado || p.notas || p.imagenes.length;
+		if (conDatos && !confirm(`¿Quitar la pieza ${i + 1} (${tituloPieza(p)})? También sale de la orden de producción.`)) return;
+		d.piezas.splice(i, 1);
+	}
+
+	const resumenPieza = (p: Pieza) => [p.tipo, metalCorto(p), p.piedras.length ? `${p.piedras.length} ${p.piedras.length === 1 ? "piedra" : "piedras"}` : ""].filter(Boolean).join(" · ");
+
+	// ─── Opciones personalizadas (metal, quilates, piedras…) ─────────────────
+	// Quedan para todos los clientes (en la app) y como opción del campo de Kommo de cada anillo.
+	let editandoOtra: string | null = $state(null);
+	let textoOtra = $state("");
+	function abrirOtra(clave: string) {
+		editandoOtra = clave;
+		textoOtra = "";
+	}
+	function confirmarOtra(lista: ListaOpcion, elegir: (v: string) => void) {
+		const v = textoOtra.trim().replace(/\s+/g, " ");
+		if (!v) return;
+		elegir(opciones[lista].find((x) => x.toLowerCase() === v.toLowerCase()) ?? v);
+		editandoOtra = null;
+		avisoOpciones = "";
+		agregarOpcion(lista, v).catch((e) => (avisoOpciones = `La opción «${v}» quedó solo en este invoice: ${e instanceof Error ? e.message : e}`));
+		if (kommo) Promise.resolve(kommo.agregarOpcion(lista, v)).catch((e) => (avisoOpciones = `No se pudo agregar «${v}» a las opciones del campo en Kommo: ${e}`));
 	}
 
 	async function generar() {
@@ -97,13 +179,17 @@
 			paso = 0;
 			if (!d.sinCliente && !d.numero) d.numero = await pedirNumero(lead.id);
 
-			// 2. IA: siempre se intenta; si falla, el invoice sale con el texto estándar.
+			// 2. IA: una redacción por pieza (la primera lleva también las condiciones y las etiquetas). Siempre se
+			// intenta; si falla, el invoice sale con el texto estándar.
 			paso = 1;
 			const firma = firmaDe(d);
 			if (!redaccionVigente) {
 				try {
 					const activas = CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ id: c.id, nombre: c.nombre, texto: textoClausula(c.id, d) }));
-					const texto = await redactar({ idioma: d.idioma, pieza: tituloPieza(d), vinetas: vinetas(d), notas: d.notas, instrucciones: d.instrucciones, clausulas: activas, etiquetas: d.idioma === "en" ? etiquetasInvoice(d) : [] });
+					const textos = await Promise.all(
+						d.piezas.map((p, i) => redactar({ idioma: d.idioma, pieza: tituloPieza(p), vinetas: vinetas(p), notas: p.notas, instrucciones: d.instrucciones, clausulas: i === 0 ? activas : [], etiquetas: i === 0 && d.idioma === "en" ? etiquetasInvoice(d) : [] })),
+					);
+					const texto: RedaccionInvoice = { ...textos[0], piezas: textos.map((x) => ({ titulo: x.titulo, vinetas: x.vinetas })), descartadas: textos.flatMap((x) => x.descartadas) };
 					redaccion = { para: firma, texto };
 					if (texto.descartadas.length) avisoIa = "La IA cambió alguna cifra o fecha, así que en esos textos se dejó el original en español.";
 				} catch (e) {
@@ -112,17 +198,22 @@
 				}
 			}
 
-			// 3. PDF. Con cliente, el servidor lo registra y lo guarda en el campo "Invoice" del lead.
+			// 3. PDF. Con cliente, la API lo registra y lo guarda en el campo "Invoice" del lead. Las piezas van a
+			// los grupos de anillos de la pestaña "Orden" y "N° de Anillos".
 			paso = 2;
 			await tick(); // que la vista previa ya muestre el número y la redacción antes de copiarla
 			const html = await htmlDelInvoice(articulo!);
 			let blob: Blob;
 			if (d.sinCliente) blob = await generarCotizacion(html);
 			else {
-				const r = await generarInvoice(d.numero, html, t.total, $state.snapshot(d));
+				const [r, enLead] = await Promise.all([
+					generarInvoice(d.numero, html, t.total, $state.snapshot(d)),
+					kommo ? Promise.resolve(kommo.guardarOrden(lead.id, ordenAKommo($state.snapshot(d) as Borrador))).then(() => "", (e) => String(e)) : "",
+				]);
 				blob = r.pdf;
 				if (r.kommo === "error") avisoKommo = `No se pudo guardar en el lead (${r.detalle || "Kommo no respondió"}). El PDF se descargó igual.`;
-				else if (r.kommo === "desactivado") avisoKommo = "El servidor no tiene configurado el campo Invoice de Kommo: el PDF solo se descargó.";
+				else if (r.kommo === "desactivado") avisoKommo = "La app no tiene configurado el campo Invoice de Kommo: el PDF solo se descargó.";
+				if (enLead) avisoKommo = `${avisoKommo} No se pudieron guardar las piezas en la pestaña Orden del lead (${enLead}).`.trim();
 			}
 			const nombre = `${d.sinCliente ? "cotizacion" : d.numero}.pdf`;
 			if (pdf) URL.revokeObjectURL(pdf.url);
@@ -152,6 +243,7 @@
 		const archivos = [...(input.files ?? [])];
 		input.value = "";
 		avisoImagenes = "";
+		const destino = d.piezas.find((p) => p.id === subirPara) ?? d.piezas[0];
 		for (const original of archivos) {
 			subiendo++;
 			try {
@@ -167,20 +259,26 @@
 				const img = await subirImagen(lead.id, f, campo?.id);
 				enKommo = [...enKommo, img];
 				urls[img.uuid] = URL.createObjectURL(f);
-				d.imagenes.push(img.uuid);
+				destino?.imagenes.push(img.uuid);
 			} catch (err) {
 				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${original.name} a Kommo${err instanceof Error && err.message ? `: ${err.message}` : ""}.`;
 				else {
-					// Sin Kommo en el servidor: la imagen sirve para este invoice, pero no queda guardada en el lead.
+					// Sin Kommo en la app: la imagen sirve para este invoice, pero no queda guardada en el lead.
 					const id = `local-${crypto.randomUUID()}`;
 					locales.push({ id, url: URL.createObjectURL(original) });
-					d.imagenes.push(id);
-					avisoImagenes = "Kommo no está configurado en el servidor: las imágenes no quedan guardadas en el lead.";
+					destino?.imagenes.push(id);
+					avisoImagenes = "Kommo no está configurado en la app: las imágenes no quedan guardadas en el lead.";
 				}
 			} finally {
 				subiendo--;
 			}
 		}
+	}
+
+	function alternarImagen(p: Pieza, id: string) {
+		const i = p.imagenes.indexOf(id);
+		if (i === -1) p.imagenes.push(id);
+		else p.imagenes.splice(i, 1);
 	}
 
 	let abiertas: string[] = $state([]);
@@ -210,22 +308,21 @@
 	const TONOS_DEPOSITO = ["#b08d57", "#d4bc94", "#8a6a3a", "#e6d8bf"];
 	const colorDeposito = (i: number, ahora: boolean) => (ahora ? "#1c2150" : TONOS_DEPOSITO[i % TONOS_DEPOSITO.length]);
 
-	function alternar(id: string) {
-		const i = d.imagenes.indexOf(id);
-		if (i === -1) d.imagenes.push(id);
-		else d.imagenes.splice(i, 1);
-	}
-
 	// Cualquier cambio después de generar deja el PDF desactualizado.
 	let listo = $derived(!generando && generada === JSON.stringify(d));
+
+	// Un valor guardado que ya no está en la lista (de un borrador viejo) se sigue mostrando.
+	const conActual = (lista: string[], actual: string) => (actual && !lista.includes(actual) ? [...lista, actual] : lista);
 
 	const input = "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-900 shadow-xs outline-none transition-colors placeholder:text-slate-400 hover:border-slate-400 focus:border-rj-navy focus:ring-3 focus:ring-rj-navy/15 disabled:bg-slate-50 disabled:text-slate-400";
 	const label = "mb-1 block text-xs font-semibold text-slate-600";
 	const seg = "flex rounded-md border border-slate-300 bg-slate-50 p-0.5 text-sm";
 	const segBtn = (on: boolean) => `flex-1 rounded px-2.5 py-1 font-medium transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy ${on ? "bg-white text-rj-navy shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800"}`;
+	const chip = (on: boolean) => `rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy ${on ? "border-rj-navy bg-rj-navy text-white" : "border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50"}`;
+	const btnTexto = "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-rj-navy hover:bg-rj-navy-soft focus-visible:outline-2 focus-visible:outline-rj-navy";
 </script>
 
-<svelte:window onkeydown={(e) => flotante && e.key === "Escape" && !generando && onclose?.()} />
+<svelte:window onkeydown={(e) => flotante && e.key === "Escape" && !generando && !editandoOtra && onclose?.()} />
 
 {#snippet etiquetaKommo(texto = "Kommo")}
 	<span class="ml-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-px text-[10px] font-semibold text-sky-700 ring-1 ring-sky-200" title="Dato tomado del lead en Kommo">
@@ -240,13 +337,46 @@
 	</label>
 {/snippet}
 
+{#snippet chevron(abierta: boolean)}
+	<svg class="size-4 shrink-0 text-slate-400 transition-transform {abierta ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+{/snippet}
+
+{#snippet mas()}
+	<svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+{/snippet}
+
+<!-- "+ Otro …": aparece un campo de texto; lo que se escribe queda como opción para todos. -->
+{#snippet otra(clave: string, lista: ListaOpcion, texto: string, ejemplo: string, elegir: (v: string) => void)}
+	{#if editandoOtra === clave}
+		<form class="flex flex-wrap items-center gap-1.5" onsubmit={(e) => (e.preventDefault(), confirmarOtra(lista, elegir))}>
+			<!-- svelte-ignore a11y_autofocus -->
+			<input class="{input} w-48 min-w-0 flex-1" bind:value={textoOtra} placeholder={ejemplo} aria-label={texto} onkeydown={(e) => e.key === "Escape" && (e.stopPropagation(), (editandoOtra = null))} autofocus />
+			<button type="submit" disabled={!textoOtra.trim()} class="rounded-md bg-rj-navy px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#262c66] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rj-navy disabled:opacity-50">Agregar</button>
+			<button type="button" onclick={() => (editandoOtra = null)} class="rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-rj-navy">Cancelar</button>
+		</form>
+	{:else}
+		<button type="button" onclick={() => abrirOtra(clave)} class={btnTexto}>{@render mas()}{texto}</button>
+	{/if}
+{/snippet}
+
 {#snippet seccion(id: Seccion, titulo: string, ayuda: string, cuerpo: import("svelte").Snippet)}
-	<section id="sec-{id}" onfocusin={() => (activa = id)} class="scroll-mt-4 border-b border-slate-200 px-5 py-6 last:border-b-0 sm:px-7">
-		<header class="mb-4">
-			<h2 class="text-[15px] font-bold text-slate-900">{titulo}</h2>
-			<p class="text-xs text-slate-500">{ayuda}</p>
-		</header>
-		{@render cuerpo()}
+	{@const abierta = !plegadas.includes(id)}
+	<section id="sec-{id}" onfocusin={() => (activa = id)} class="scroll-mt-4 border-b border-slate-200 last:border-b-0">
+		<h2>
+			<button type="button" onclick={() => alternarSeccion(id)} aria-expanded={abierta} aria-controls="cuerpo-{id}" class="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rj-navy sm:px-7">
+				<span class="min-w-0 flex-1">
+					<span class="block text-[15px] font-bold text-slate-900">{titulo}</span>
+					<span class="block text-xs font-normal text-slate-500">{ayuda}</span>
+				</span>
+				{#if !abierta && estado[id] !== "ok"}
+					<span class="size-2 shrink-0 rounded-full {estado[id] === 'error' ? 'bg-red-500' : 'bg-amber-400'}" title={estado[id] === "error" ? "Falta un dato obligatorio" : "Revisar"}></span>
+				{/if}
+				{@render chevron(abierta)}
+			</button>
+		</h2>
+		{#if abierta}
+			<div id="cuerpo-{id}" class="px-5 pb-6 sm:px-7">{@render cuerpo()}</div>
+		{/if}
 	</section>
 {/snippet}
 
@@ -285,28 +415,39 @@
 		</div>
 
 		<div class="relative flex min-h-0 flex-1">
-			<!-- Índice de secciones -->
-			<nav class="hidden w-52 shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 px-3 py-5 xl:flex" aria-label="Secciones del invoice">
-				<ul class="space-y-0.5">
-					{#each SECCIONES as s (s.id)}
+			<!-- Índice de secciones (se pliega para dar más espacio al formulario) -->
+			<nav class="hidden shrink-0 flex-col border-r border-slate-200 bg-slate-50/70 py-3 xl:flex {navPlegada ? 'w-12 items-center px-1.5' : 'w-52 px-3'}" aria-label="Secciones del invoice">
+				<button type="button" onclick={() => (navPlegada = !navPlegada)} aria-expanded={!navPlegada} class="mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-white hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-rj-navy {navPlegada ? '' : 'self-end'}" title={navPlegada ? "Mostrar el índice" : "Ocultar el índice"}>
+					<svg class="size-4 transition-transform {navPlegada ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
+					<span class={navPlegada ? "sr-only" : ""}>{navPlegada ? "Mostrar el índice" : "Ocultar"}</span>
+				</button>
+				<ul class="space-y-0.5 {navPlegada ? 'w-full' : ''}">
+					{#each SECCIONES as s, i (s.id)}
 						<li>
-							<button type="button" onclick={() => ir(s.id)} class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy {activa === s.id ? 'bg-white font-semibold text-rj-navy shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/70'}">
-								{s.nombre}
-								{#if estado[s.id] === "ok"}
-									<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-label="Completa"><path d="M20 6 9 17l-5-5" /></svg>
+							<button type="button" onclick={() => ir(s.id)} title={navPlegada ? s.nombre : undefined} class="flex w-full items-center rounded-md text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy {navPlegada ? 'justify-center px-0 py-2' : 'justify-between px-3 py-2'} {activa === s.id ? 'bg-white font-semibold text-rj-navy shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:bg-white/70'}">
+								{#if navPlegada}
+									<span class="relative text-xs tabular-nums">{i + 1}<span class="absolute -top-0.5 -right-2 size-1.5 rounded-full {estado[s.id] === 'ok' ? 'bg-emerald-500' : estado[s.id] === 'error' ? 'bg-red-500' : 'bg-amber-400'}" aria-hidden="true"></span></span>
+									<span class="sr-only">{s.nombre}</span>
 								{:else}
-									<span class="size-2 rounded-full {estado[s.id] === 'error' ? 'bg-red-500' : 'bg-amber-400'}" aria-label={estado[s.id] === "error" ? "Falta un dato obligatorio" : "Revisar"}></span>
+									{s.nombre}
+									{#if estado[s.id] === "ok"}
+										<svg class="size-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-label="Completa"><path d="M20 6 9 17l-5-5" /></svg>
+									{:else}
+										<span class="size-2 rounded-full {estado[s.id] === 'error' ? 'bg-red-500' : 'bg-amber-400'}" aria-label={estado[s.id] === "error" ? "Falta un dato obligatorio" : "Revisar"}></span>
+									{/if}
 								{/if}
 							</button>
 						</li>
 					{/each}
 				</ul>
-				<div class="mt-auto rounded-lg border border-rj-gold/40 bg-rj-gold-soft/60 p-3 text-xs text-[#6f5530]">
-					<p class="mb-1 flex items-center gap-1 font-semibold">
-						<svg class="size-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>Cómo funciona
-					</p>
-					Llena lo que sepas. La IA redacta la descripción y las condiciones, y el PDF se descarga en tu equipo.
-				</div>
+				{#if !navPlegada}
+					<div class="mt-auto rounded-lg border border-rj-gold/40 bg-rj-gold-soft/60 p-3 text-xs text-[#6f5530]">
+						<p class="mb-1 flex items-center gap-1 font-semibold">
+							<svg class="size-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9z" /></svg>Cómo funciona
+						</p>
+						Llena lo que sepas. La IA redacta la descripción y las condiciones, y el PDF se descarga en tu equipo.
+					</div>
+				{/if}
 			</nav>
 
 			<!-- Formulario -->
@@ -360,117 +501,172 @@
 				{/snippet}
 				{@render seccion("cliente", "Cliente y factura", "Los datos del contacto vienen del lead; puedes corregirlos aquí.", cliente)}
 
-				{#snippet pieza()}
-					<div class="space-y-5">
-						<div>
-							<label class={label} for="f-pieza">Tipo de pieza</label>
-							<input id="f-pieza" class={input} bind:value={d.pieza} placeholder="Ej. Anillo de compromiso" />
-							<div class="mt-2 flex flex-wrap gap-1.5">
-								{#each TIPOS_PIEZA as tp (tp)}
-									<button type="button" onclick={() => (d.pieza = tp)} class="rounded-full border px-2.5 py-0.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-rj-navy {d.pieza === tp ? 'border-rj-navy bg-rj-navy text-white' : 'border-slate-300 text-slate-600 hover:border-slate-400 hover:bg-slate-50'}">{tp}</button>
-								{/each}
-							</div>
-							<div class="mt-3">{@render check(d.aMedida, (v) => (d.aMedida = v), "Hecha a la medida")}</div>
-						</div>
-
-						<fieldset>
-							<legend class={label}>Metal {#if lead.producto?.metal}{@render etiquetaKommo("Lead")}{/if}</legend>
-							<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-								{#each METALES as m (m.id)}
-									<label class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors has-focus-visible:outline-2 has-focus-visible:outline-rj-navy {d.metal === m.id ? 'border-rj-navy bg-rj-navy-soft font-semibold text-rj-navy' : 'border-slate-300 hover:border-slate-400'}">
-										<input type="radio" name="metal" value={m.id} bind:group={d.metal} class="sr-only" />
-										<span class="size-4 shrink-0 rounded-full ring-1 ring-black/10" style="background: radial-gradient(circle at 30% 30%, #fff8, transparent 60%), {m.color}"></span>
-										{m.nombre}
-									</label>
-								{/each}
-							</div>
-							{#if d.metal === "otro"}
-								<div class="mt-2.5">
-									<label class="sr-only" for="f-metal-otro">Describe el metal</label>
-									<!-- svelte-ignore a11y_autofocus -->
-									<input id="f-metal-otro" class={input} bind:value={d.metalOtro} autofocus placeholder="Ej. Plata 925, oro bicolor de 18k, paladio…" />
-									<p class="mt-1 text-xs text-slate-500">Se escribe tal cual en la descripción del invoice.</p>
-								</div>
-							{:else if d.metal !== "platino"}
-								<div class="mt-2.5 flex flex-wrap items-center gap-4">
-									<div class="{seg} w-44" role="radiogroup" aria-label="Kilates">
-										{#each ["10k", "14k", "18k"] as k (k)}
-											<button type="button" role="radio" aria-checked={d.kilates === k} class={segBtn(d.kilates === k)} onclick={() => (d.kilates = k)}>{k}</button>
-										{/each}
+				{#snippet piezas()}
+					<div class="space-y-3">
+						{#if !d.piezas.length}
+							<p class="rounded-md border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500">Todavía no hay piezas. Agrega la primera: cada pieza es un anillo de la orden de producción.</p>
+						{/if}
+						<ol class="space-y-3">
+							{#each d.piezas as p, i (p.id)}
+								{@const abierta = piezasAbiertas.includes(p.id)}
+								<li class="rounded-lg border {abierta ? 'border-slate-300 shadow-sm' : 'border-slate-200'}">
+									<div class="flex items-center gap-2 pr-2">
+										<button type="button" onclick={() => (piezasAbiertas = alternarEn(piezasAbiertas, p.id))} aria-expanded={abierta} aria-controls="pieza-{p.id}" class="flex min-w-0 flex-1 items-center gap-3 rounded-l-lg px-3 py-2.5 text-left hover:bg-slate-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rj-navy">
+											<span class="grid size-6 shrink-0 place-items-center rounded-full bg-rj-navy text-[11px] font-bold text-white">{i + 1}</span>
+											<span class="min-w-0 flex-1">
+												<span class="block text-sm font-semibold text-slate-900">Pieza {i + 1}</span>
+												<span class="block truncate text-xs {p.tipo ? 'text-slate-500' : 'text-red-600'}">{resumenPieza(p) || "Falta el tipo de pieza"}</span>
+											</span>
+											{@render chevron(abierta)}
+										</button>
+										<button type="button" onclick={() => quitarPieza(i)} class="shrink-0 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600" aria-label="Quitar la pieza {i + 1}">Quitar</button>
 									</div>
-									{@render check(d.solido, (v) => (d.solido = v), "Oro sólido")}
-								</div>
-							{/if}
-						</fieldset>
+									{#if abierta}
+										<div id="pieza-{p.id}" class="space-y-5 border-t border-slate-100 px-3 pt-4 pb-4">
+											<fieldset>
+												<legend class={label}>Tipo de pieza</legend>
+												<div class="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tipo de la pieza {i + 1}">
+													{#each conActual(opciones.tipos, p.tipo) as tp (tp)}
+														<button type="button" role="radio" aria-checked={p.tipo === tp} onclick={() => (p.tipo = tp)} class={chip(p.tipo === tp)}>{tp}</button>
+													{/each}
+												</div>
+											</fieldset>
 
-						<fieldset>
-							<legend class={label}>Piedras {#if lead.producto?.piedra}{@render etiquetaKommo("Lead")}{/if}</legend>
-							{#if d.piedras.length === 0}
-								<p class="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">La pieza es solo metal. Agrega una piedra si lleva alguna.</p>
-							{/if}
-							<ul class="space-y-2">
-								{#each d.piedras as p, i (p.id)}
-									<li class="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-										<div class="mb-2 flex items-center justify-between">
-											<div class="{seg} text-xs" role="radiogroup" aria-label="Posición de la piedra {i + 1}">
-												{#each [["central", "Central"], ["lateral", "Laterales"], ["pave", "Pavé"]] as [v, txt] (v)}
-													<button type="button" role="radio" aria-checked={p.posicion === v} class={segBtn(p.posicion === v)} onclick={() => (p.posicion = v as typeof p.posicion)}>{txt}</button>
-												{/each}
+											<fieldset>
+												<legend class={label}>Metal {#if i === 0 && lead.producto?.metal}{@render etiquetaKommo("Lead")}{/if}</legend>
+												<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+													{#each conActual(opciones.metales, p.metal) as m (m)}
+														<label class="flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors has-focus-visible:outline-2 has-focus-visible:outline-rj-navy {p.metal === m ? 'border-rj-navy bg-rj-navy-soft font-semibold text-rj-navy' : 'border-slate-300 hover:border-slate-400'}">
+															<input type="radio" name="metal-{p.id}" value={m} bind:group={p.metal} class="sr-only" />
+															<span class="size-4 shrink-0 rounded-full ring-1 ring-black/10" style="background: radial-gradient(circle at 30% 30%, #fff8, transparent 60%), {colorMetal(m)}"></span>
+															<span class="min-w-0 truncate">{m}</span>
+														</label>
+													{/each}
+												</div>
+												<div class="mt-1.5">{@render otra(`metal-${p.id}`, "metales", "Otro metal", "Ej. Plata 925, paladio…", (v) => (p.metal = v))}</div>
+												{#if esOro(p.metal)}
+													<div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
+														<div class="flex flex-wrap gap-1" role="radiogroup" aria-label="Quilates de la pieza {i + 1}">
+															{#each conActual(opciones.quilates, p.kilates) as k (k)}
+																<button type="button" role="radio" aria-checked={p.kilates === k} class={chip(p.kilates === k)} onclick={() => (p.kilates = k)}>{k}</button>
+															{/each}
+														</div>
+														{@render check(p.solido, (v) => (p.solido = v), "Oro sólido")}
+													</div>
+													<div class="mt-1.5">{@render otra(`quilates-${p.id}`, "quilates", "Otro quilate", "Ej. 22k", (v) => (p.kilates = v))}</div>
+												{/if}
+											</fieldset>
+
+											<fieldset>
+												<legend class={label}>Piedras {#if i === 0 && lead.producto?.piedra}{@render etiquetaKommo("Lead")}{/if}</legend>
+												{#if !p.piedras.length}
+													<p class="rounded-md border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">La pieza es solo metal. Agrega una piedra si lleva alguna.</p>
+												{/if}
+												<ul class="space-y-2">
+													{#each p.piedras as x, j (x.id)}
+														{@const piedraAbierta = piedrasAbiertas.includes(x.id)}
+														<li class="rounded-lg border border-slate-200 bg-slate-50/60">
+															<div class="flex items-center gap-2 pr-2">
+																<button type="button" onclick={() => (piedrasAbiertas = alternarEn(piedrasAbiertas, x.id))} aria-expanded={piedraAbierta} aria-controls="piedra-{x.id}" class="flex min-w-0 flex-1 items-center gap-2 rounded-l-lg px-3 py-2 text-left text-sm hover:bg-slate-100/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-rj-navy">
+																	<span class="min-w-0 flex-1 truncate"><b class="font-semibold text-slate-800">{x.posicion}</b> <span class="text-slate-500">· {[x.cantidad !== "1" ? x.cantidad : "", x.tipo, x.corte, x.tamano].filter(Boolean).join(" · ")}</span></span>
+																	{@render chevron(piedraAbierta)}
+																</button>
+																<button type="button" onclick={() => p.piedras.splice(j, 1)} class="shrink-0 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600" aria-label="Quitar la piedra {j + 1}">Quitar</button>
+															</div>
+															{#if piedraAbierta}
+																<div id="piedra-{x.id}" class="space-y-3 border-t border-slate-200 px-3 pt-3 pb-3">
+																	<div>
+																		<span class="mb-1 block text-[11px] text-slate-500">Ubicación</span>
+																		<div class="flex flex-wrap gap-1" role="radiogroup" aria-label="Ubicación de la piedra {j + 1}">
+																			{#each conActual(opciones.posiciones, x.posicion) as pos (pos)}
+																				<button type="button" role="radio" aria-checked={x.posicion === pos} class={chip(x.posicion === pos)} onclick={() => (x.posicion = pos)}>{pos}</button>
+																			{/each}
+																		</div>
+																		<div class="mt-1">{@render otra(`posicion-${x.id}`, "posiciones", "Otra ubicación", "Ej. Halo, Hidden halo…", (v) => (x.posicion = v))}</div>
+																	</div>
+																	<div class="grid grid-cols-2 gap-2">
+																		<div>
+																			<label class="mb-0.5 block text-[11px] text-slate-500" for="pt-{x.id}">Tipo de piedra</label>
+																			<select id="pt-{x.id}" class={input} bind:value={x.tipo}>
+																				{#each conActual(opciones.piedras, x.tipo) as tp (tp)}<option>{tp}</option>{/each}
+																			</select>
+																			<div class="mt-1">{@render otra(`piedra-${x.id}`, "piedras", "Otro tipo", "Ej. Aguamarina", (v) => (x.tipo = v))}</div>
+																		</div>
+																		<div>
+																			<label class="mb-0.5 block text-[11px] text-slate-500" for="pf-{x.id}">Forma</label>
+																			<select id="pf-{x.id}" class={input} bind:value={x.corte}>
+																				{#each conActual(opciones.formas, x.corte) as c (c)}<option>{c}</option>{/each}
+																			</select>
+																			<div class="mt-1">{@render otra(`forma-${x.id}`, "formas", "Otra forma", "Ej. Asscher", (v) => (x.corte = v))}</div>
+																		</div>
+																		<div>
+																			<label class="mb-0.5 block text-[11px] text-slate-500" for="ps-{x.id}">Tamaño</label>
+																			<input id="ps-{x.id}" class={input} bind:value={x.tamano} placeholder="1 ct o 2 mm" />
+																		</div>
+																		<div>
+																			<label class="mb-0.5 block text-[11px] text-slate-500" for="pc-{x.id}">Cantidad</label>
+																			<input id="pc-{x.id}" class={input} bind:value={x.cantidad} placeholder="1" />
+																		</div>
+																	</div>
+																	<div class="{seg} w-56 text-xs" role="radiogroup" aria-label="Origen">
+																		<button type="button" role="radio" aria-checked={x.origen === "natural"} class={segBtn(x.origen === "natural")} onclick={() => (x.origen = "natural")}>Natural</button>
+																		<button type="button" role="radio" aria-checked={x.origen === "laboratorio"} class={segBtn(x.origen === "laboratorio")} onclick={() => (x.origen = "laboratorio")}>Laboratorio</button>
+																	</div>
+																</div>
+															{/if}
+														</li>
+													{/each}
+												</ul>
+												<button
+													type="button"
+													onclick={() => {
+														const nueva = nuevaPiedra(p.piedras.length ? "Laterales" : "Central");
+														p.piedras.push(nueva);
+														piedrasAbiertas = [...piedrasAbiertas, nueva.id];
+													}}
+													class="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-semibold text-rj-navy hover:bg-rj-navy-soft focus-visible:outline-2 focus-visible:outline-rj-navy"
+												>
+													{@render mas()}Agregar piedra
+												</button>
+											</fieldset>
+
+											<div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:gap-6">
+												<div>
+													<label class={label} for="f-talla-{p.id}">Talla {#if i === 0 && lead.producto?.talla}{@render etiquetaKommo("Lead")}{/if}</label>
+													<div class="flex items-center gap-3">
+														<input id="f-talla-{p.id}" class="{input} w-24" bind:value={p.talla} disabled={p.tallaPorConfirmar} placeholder="7" />
+														{@render check(p.tallaPorConfirmar, (v) => (p.tallaPorConfirmar = v), "Por confirmar")}
+													</div>
+												</div>
+												<div>
+													<label class={label} for="f-grabado-{p.id}">Grabado <span class="font-normal text-slate-400">(opcional)</span></label>
+													<input id="f-grabado-{p.id}" class={input} bind:value={p.grabado} placeholder="Ej. 12-20-2018" />
+												</div>
 											</div>
-											<button type="button" onclick={() => d.piedras.splice(i, 1)} class="rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-2 focus-visible:outline-red-600">Quitar</button>
-										</div>
-										<div class="grid grid-cols-2 gap-2 sm:grid-cols-[1.2fr_1fr_1fr_.7fr]">
-											<select class={input} bind:value={p.tipo} aria-label="Tipo de piedra">
-												{#each TIPOS_PIEDRA as tp (tp)}<option>{tp}</option>{/each}
-											</select>
-											<select class={input} bind:value={p.corte} aria-label="Corte">
-												{#each CORTES as c (c)}<option>{c}</option>{/each}
-											</select>
-											<input class={input} bind:value={p.tamano} placeholder="1 ct o 2 mm" aria-label="Tamaño" />
-											<input class={input} bind:value={p.cantidad} placeholder="Cant." aria-label="Cantidad" />
-										</div>
-										<div class="mt-2 {seg} w-56 text-xs" role="radiogroup" aria-label="Origen">
-											<button type="button" role="radio" aria-checked={p.origen === "natural"} class={segBtn(p.origen === "natural")} onclick={() => (p.origen = "natural")}>Natural</button>
-											<button type="button" role="radio" aria-checked={p.origen === "laboratorio"} class={segBtn(p.origen === "laboratorio")} onclick={() => (p.origen = "laboratorio")}>Laboratorio</button>
-										</div>
-									</li>
-								{/each}
-							</ul>
-							<button type="button" onclick={() => d.piedras.push(nuevaPiedra())} class="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-semibold text-rj-navy hover:bg-rj-navy-soft focus-visible:outline-2 focus-visible:outline-rj-navy">
-								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Agregar piedra
-							</button>
-						</fieldset>
 
-						<div class="grid gap-3 sm:grid-cols-[auto_1fr] sm:gap-6">
-							<div>
-								<label class={label} for="f-talla">Talla {#if lead.producto?.talla}{@render etiquetaKommo("Lead")}{/if}</label>
-								<div class="flex items-center gap-3">
-									<input id="f-talla" class="{input} w-24" bind:value={d.talla} disabled={d.tallaPorConfirmar} placeholder="7" />
-									{@render check(d.tallaPorConfirmar, (v) => (d.tallaPorConfirmar = v), "Por confirmar")}
-								</div>
-							</div>
-							<div>
-								<label class={label} for="f-grabado">Grabado <span class="font-normal text-slate-400">(opcional)</span></label>
-								<input id="f-grabado" class={input} bind:value={d.grabado} placeholder="Ej. 12-20-2018" />
-							</div>
-						</div>
-
-						{@render check(d.origen, (v) => (d.origen = v), "Incluir servicio Origen", "Video del proceso de banco de la pieza, entregado 7 a 15 días después.")}
-
-						<div>
-							<label class={label} for="f-notas">Notas para la IA</label>
-							<textarea id="f-notas" rows="3" class={input} bind:value={d.notas} placeholder="Detalles que no caben arriba: forma de la banda, estilo, pedidos del cliente…"></textarea>
-							<p class="mt-1 text-xs text-slate-500">La IA las convierte en viñetas de la descripción. No hace falta redactarlas bien.</p>
-						</div>
+											<div>
+												<label class={label} for="f-notas-{p.id}">Notas para la IA</label>
+												<textarea id="f-notas-{p.id}" rows="3" class={input} bind:value={p.notas} placeholder="Detalles que no caben arriba: forma de la banda, estilo, pedidos del cliente…"></textarea>
+												<p class="mt-1 text-xs text-slate-500">La IA las convierte en viñetas de la descripción. No hace falta redactarlas bien.</p>
+											</div>
+										</div>
+									{/if}
+								</li>
+							{/each}
+						</ol>
+						<button type="button" onclick={agregarPieza} class="inline-flex items-center gap-1.5 rounded-md border border-dashed border-rj-navy/40 px-3 py-2 text-sm font-semibold text-rj-navy hover:bg-rj-navy-soft focus-visible:outline-2 focus-visible:outline-rj-navy">
+							{@render mas()}{d.piezas.length ? "Agregar otra pieza" : "Agregar la primera pieza"}
+						</button>
+						{#if avisoOpciones}<p class="text-xs text-amber-800" aria-live="polite">{avisoOpciones}</p>{/if}
 					</div>
 				{/snippet}
-				{@render seccion("pieza", "Pieza", "Lo que se fabrica. Los campos arman la descripción; las notas la completan.", pieza)}
+				{@render seccion("pieza", "Piezas", "Lo que se fabrica. Cada pieza queda como un anillo en la pestaña Orden del lead.", piezas)}
 
 				{#snippet pago()}
 					<div class="space-y-5">
 						<div class="grid gap-3 sm:grid-cols-2">
 							<div>
-								<label class={label} for="f-valor">Valor de la pieza {#if d.valor === lead.presupuesto}{@render etiquetaKommo("Presupuesto")}{/if}</label>
+								<label class={label} for="f-valor">Valor {d.piezas.length > 1 ? "de las piezas" : "de la pieza"} {#if d.valor === lead.presupuesto}{@render etiquetaKommo("Presupuesto")}{/if}</label>
 								<div class="relative">
 									<span class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-slate-400">$</span>
 									<input id="f-valor" type="number" min="0" step="10" class="{input} pl-6 tabular-nums" bind:value={d.valor} />
@@ -557,7 +753,7 @@
 							</ol>
 							<datalist id="momentos-pago">{#each MOMENTOS_PAGO as m (m)}<option value={m}></option>{/each}</datalist>
 							<button type="button" onclick={() => d.depositos.push(nuevoDeposito(d.depositos.length + 1))} class="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-semibold text-rj-navy hover:bg-rj-navy-soft focus-visible:outline-2 focus-visible:outline-rj-navy">
-								<svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Agregar depósito
+								{@render mas()}Agregar depósito
 							</button>
 						</fieldset>
 
@@ -605,34 +801,64 @@
 						<div class="space-y-2.5">
 							{@render check(d.envio, (v) => (d.envio = v), "Envío asegurado incluido", "Asegurado por el valor total, con firma requerida.")}
 							{@render check(d.pickup, (v) => (d.pickup = v), `Pickup en ${d.params.ciudadPickup}`)}
+							{@render check(d.origen, (v) => (d.origen = v), "Incluir servicio Origen", "Video del proceso de banco de la pieza, entregado 7 a 15 días después.")}
 						</div>
 					</div>
 				{/snippet}
 				{@render seccion("entrega", "Entrega", "Una fecha o un rango. Si aún no la sabes, el invoice dirá «por definir».", entrega)}
 
 				{#snippet imagenes()}
-					<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
-						{#each galeria as a (a.id)}
-							{@const sel = d.imagenes.includes(a.id)}
-							<label class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition-colors has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-rj-navy {sel ? 'border-rj-navy' : 'border-transparent hover:border-slate-300'}">
-								<input type="checkbox" checked={sel} onchange={() => alternar(a.id)} class="sr-only" />
-								<div class="aspect-square bg-slate-100">
-									{#if a.url}<img src={a.url} alt="" class="size-full object-cover" />{:else}<span class="grid size-full place-items-center text-[10px] text-slate-400">Cargando…</span>{/if}
+					<div class="space-y-3">
+						{#if d.piezas.length > 1}
+							<p class="text-xs text-slate-500">Toca los números de cada imagen para elegir en qué pieza va. El orden en que las eliges es el orden en el invoice.</p>
+						{/if}
+						<div class="grid grid-cols-3 gap-2 sm:grid-cols-4">
+							{#each galeria as a (a.id)}
+								{@const usada = d.piezas.some((p) => p.imagenes.includes(a.id))}
+								<div class="overflow-hidden rounded-lg border-2 transition-colors {usada ? 'border-rj-navy' : 'border-transparent'}">
+									{#if d.piezas.length === 1}
+										{@const p = d.piezas[0]}
+										{@const sel = p.imagenes.includes(a.id)}
+										<label class="relative block cursor-pointer has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-rj-navy">
+											<input type="checkbox" checked={sel} onchange={() => alternarImagen(p, a.id)} class="sr-only" aria-label="Usar {a.nombre} en el invoice" />
+											<div class="aspect-square bg-slate-100">
+												{#if a.url}<img src={a.url} alt="" class="size-full object-cover" />{:else}<span class="grid size-full place-items-center text-[10px] text-slate-400">Cargando…</span>{/if}
+											</div>
+											<span class="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-full text-[11px] font-bold {sel ? 'bg-rj-navy text-white' : 'bg-white/80 text-transparent ring-1 ring-slate-300'}">{sel ? p.imagenes.indexOf(a.id) + 1 : ""}</span>
+										</label>
+									{:else}
+										<div class="aspect-square bg-slate-100">
+											{#if a.url}<img src={a.url} alt="" class="size-full object-cover" />{:else}<span class="grid size-full place-items-center text-[10px] text-slate-400">Cargando…</span>{/if}
+										</div>
+										{#if d.piezas.length}
+											<div class="flex flex-wrap gap-1 px-1.5 pt-1" role="group" aria-label="Piezas que usan {a.nombre}">
+												{#each d.piezas as p, i (p.id)}
+													{@const sel = p.imagenes.includes(a.id)}
+													<button type="button" aria-pressed={sel} onclick={() => alternarImagen(p, a.id)} title="{sel ? 'Quitar de' : 'Usar en'} la pieza {i + 1}" class="grid size-6 place-items-center rounded-full text-[11px] font-bold focus-visible:outline-2 focus-visible:outline-rj-navy {sel ? 'bg-rj-navy text-white' : 'text-slate-500 ring-1 ring-slate-300 hover:ring-slate-400'}">{i + 1}</button>
+												{/each}
+											</div>
+										{/if}
+									{/if}
+									<span class="block truncate px-1.5 py-1 text-[11px] text-slate-600">{a.nombre}</span>
 								</div>
-								<span class="absolute top-1.5 right-1.5 grid size-5 place-items-center rounded-full text-[11px] font-bold {sel ? 'bg-rj-navy text-white' : 'bg-white/80 text-transparent ring-1 ring-slate-300'}">
-									{sel ? d.imagenes.indexOf(a.id) + 1 : ""}
-								</span>
-								<span class="block truncate px-1.5 py-1 text-[11px] text-slate-600">{a.nombre}</span>
+							{/each}
+							<label class="grid aspect-square cursor-pointer place-items-center rounded-lg border-2 border-dashed border-slate-300 text-center text-xs text-slate-500 transition-colors hover:border-rj-navy hover:text-rj-navy has-focus-visible:outline-2 has-focus-visible:outline-rj-navy">
+								<input type="file" accept="image/*" multiple onchange={subir} class="sr-only" />
+								<span><svg class="mx-auto mb-1 size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" /></svg>{subiendo ? "Subiendo…" : "Subir imagen"}</span>
 							</label>
-						{/each}
-						<label class="grid aspect-square cursor-pointer place-items-center rounded-lg border-2 border-dashed border-slate-300 text-center text-xs text-slate-500 transition-colors hover:border-rj-navy hover:text-rj-navy has-focus-visible:outline-2 has-focus-visible:outline-rj-navy">
-							<input type="file" accept="image/*" multiple onchange={subir} class="sr-only" />
-							<span><svg class="mx-auto mb-1 size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 20h16" /></svg>{subiendo ? "Subiendo…" : "Subir imagen"}</span>
-						</label>
+						</div>
+						{#if d.piezas.length > 1}
+							<div class="flex items-center gap-2 text-xs">
+								<label for="f-subir-para" class="text-slate-500">Las que subas van a</label>
+								<select id="f-subir-para" class="{input} w-auto py-1 text-xs" value={subirPara ?? d.piezas[0].id} onchange={(e) => (subirPara = Number(e.currentTarget.value))}>
+									{#each d.piezas as p, i (p.id)}<option value={p.id}>Pieza {i + 1}{p.tipo ? ` · ${p.tipo}` : ""}</option>{/each}
+								</select>
+							</div>
+						{/if}
+						{#if avisoImagenes}<p class="text-xs text-amber-800">{avisoImagenes}</p>{/if}
 					</div>
-					{#if avisoImagenes}<p class="mt-2 text-xs text-amber-800">{avisoImagenes}</p>{/if}
 				{/snippet}
-				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas se guardan en la pestaña «Imágenes de la pieza» del lead. El número indica el orden en el invoice.", imagenes)}
+				{@render seccion("imagenes", "Imágenes de referencia", "Las imágenes del lead en Kommo. Las que subas se guardan en la pestaña «Imágenes de la pieza» del lead.", imagenes)}
 
 				{#snippet condiciones()}
 					<div class="space-y-4">
@@ -657,7 +883,7 @@
 												</span>
 												{#if !abierta}<span class="block truncate text-xs text-slate-500">{texto.replaceAll("**", "")}</span>{/if}
 											</span>
-											<svg class="size-4 shrink-0 text-slate-400 transition-transform {abierta ? 'rotate-180' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+											{@render chevron(abierta)}
 										</button>
 									</div>
 									{#if abierta}
@@ -748,7 +974,7 @@
 				{:else if bloqueantes.length}
 					<p class="text-red-700">
 						Falta completar:
-						{#each bloqueantes as b, i (b.msg)}<button type="button" onclick={() => ir(b.sec)} class="font-semibold underline underline-offset-2">{b.msg.replace(/^Falta (el |la )?/, "")}</button>{i < bloqueantes.length - 1 ? ", " : ""}{/each}
+						{#each bloqueantes as b, i (b.msg)}<button type="button" onclick={() => ir(b.sec)} class="font-semibold underline underline-offset-2">{b.msg.replace(/^Falta (agregar )?(el |la |una )?/, "")}</button>{i < bloqueantes.length - 1 ? ", " : ""}{/each}
 					</p>
 				{:else if faltan.length}
 					<p class="text-amber-700">

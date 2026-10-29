@@ -3,6 +3,8 @@
 //   - la página de Kommo (/lead, /ajustes) y su API para el widget (/api/v4/leads, /api/v4/contacts);
 //   - un servidor del widget falso en /srv (para el tour, sin base ni Chromium);
 //   - Kommo y Kommo Drive para la app real, apuntándole KOMMO_BASE_URL (prueba de punta a punta).
+//   - Las pestañas y campos de los leads (con las opciones de los de selección), y el widget Group Fields
+//     (/api/v4/widgets) con su ajuste ring_config, para ver cómo el widget arma la pestaña "Orden".
 //
 //   node widget/_tour_src/kommo.mjs     → http://localhost:4180/lead  y  /ajustes
 //   …/lead?servidor=http://localhost:4173/api   → usa la API de la app (vite preview) en vez de /srv (más &clave=… si tiene WIDGET_KEY)
@@ -82,10 +84,23 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 	const archivos = new Map();
 	const adjuntos = [];
 	const camposArchivo = [];
-	// Pestañas y campos de los leads, y lo que se guardó en los campos del lead (cada PATCH se suma).
-	const grupos = [];
-	const campos = [{ id: 133486, name: "Invoice", type: "file", group_id: null, sort: 1 }];
+	// Pestañas y campos de los leads, y lo que se guardó en los campos del lead (cada PATCH se suma). Como en la
+	// cuenta real: la pestaña vieja "Widget Invoice" con el campo Invoice y los de producto, y "N° de Anillos".
+	const grupos = [{ id: "leads_vieja", name: "Widget Invoice" }];
+	const campos = [
+		{ id: 133486, name: "Invoice", type: "file", group_id: "leads_vieja", sort: 1 },
+		{ id: 133508, name: "Metal de la pieza", type: "text", group_id: "leads_vieja", sort: 2 },
+		{ id: 133510, name: "Quilates", type: "text", group_id: "leads_vieja", sort: 3 },
+		{ id: 133562, name: "Piedra", type: "text", group_id: "leads_vieja", sort: 4 },
+		{ id: 133564, name: "Talla", type: "text", group_id: "leads_vieja", sort: 5 },
+		{ id: 283974, name: "N° de Anillos", type: "numeric", group_id: null, sort: 6 },
+	];
 	let valores = [];
+	let siguienteEnum = 9000;
+	const conIds = (enums) => (enums ?? []).map((e) => ({ ...e, id: e.id ?? ++siguienteEnum }));
+	// Widget Group Fields instalado en la cuenta, con su ajuste ring_config.
+	let ajustesGF = { api_key: "clave-de-gf", ring_config: JSON.stringify({ field: "N° de Anillos", groups: [] }) };
+	const opcionesSrv = {};
 	let siguiente = 0;
 	const guardar = (nombre, tipo, datos) => {
 		const uuid = `uuid-${++siguiente}`;
@@ -106,7 +121,12 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 		if (ruta === `/api/v4/leads/${LEAD_ID}` && req.method === "PATCH") {
 			const cambio = JSON.parse((await leer(req)).toString());
 			camposArchivo.push(cambio);
-			valores = [...valores.filter((v) => !cambio.custom_fields_values.some((n) => n.field_id === v.field_id)), ...cambio.custom_fields_values];
+			// Un valor de selección llega como enum_id: se guarda también su texto, como lo devuelve Kommo.
+			const conTexto = cambio.custom_fields_values.map((v) => ({
+				...v,
+				values: v.values?.map((x) => (x.enum_id ? { ...x, value: campos.find((c) => c.id === v.field_id)?.enums?.find((e) => e.id === x.enum_id)?.value } : x)) ?? null,
+			}));
+			valores = [...valores.filter((v) => !conTexto.some((n) => n.field_id === v.field_id)), ...conTexto.filter((v) => v.values)];
 			return json({ id: LEAD_ID });
 		}
 		if (ruta === "/api/v4/leads/custom_fields/groups" && req.method === "GET") return json({ _embedded: { custom_field_groups: grupos } });
@@ -117,10 +137,27 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 		}
 		if (ruta === "/api/v4/leads/custom_fields" && req.method === "GET") return json({ _embedded: { custom_fields: campos } });
 		if (ruta === "/api/v4/leads/custom_fields" && req.method === "POST") {
-			const nuevos = JSON.parse((await leer(req)).toString()).map((c, i) => ({ ...c, id: 140000 + campos.length + i }));
+			const nuevos = JSON.parse((await leer(req)).toString()).map((c, i) => ({ ...c, id: 140000 + campos.length + i, ...(c.enums ? { enums: conIds(c.enums) } : {}) }));
 			campos.push(...nuevos);
 			return json({ _embedded: { custom_fields: nuevos } });
 		}
+		if (ruta === "/api/v4/leads/custom_fields" && req.method === "PATCH") {
+			const cambiados = JSON.parse((await leer(req)).toString()).map((c) => {
+				const campo = campos.find((x) => x.id === c.id);
+				Object.assign(campo, c, c.enums ? { enums: conIds(c.enums) } : {});
+				return campo;
+			});
+			return json({ _embedded: { custom_fields: cambiados } });
+		}
+		const grupoBorrar = ruta.match(/^\/api\/v4\/leads\/custom_fields\/groups\/(.+)$/);
+		if (grupoBorrar && req.method === "DELETE") {
+			const i = grupos.findIndex((g) => g.id === grupoBorrar[1]);
+			if (i !== -1) grupos.splice(i, 1);
+			return (res.writeHead(204), res.end());
+		}
+		if (ruta === "/api/v4/widgets") return json({ _embedded: { widgets: [{ code: "rjinvoice", settings_template: [{ key: "widget_key" }] }, { code: "groupfields", settings_template: [{ key: "api_key" }, { key: "ring_config" }] }] } });
+		if (ruta === "/api/v4/widgets/groupfields" && req.method === "GET") return json({ code: "groupfields", settings: ajustesGF });
+		if (ruta === "/api/v4/widgets/groupfields" && req.method === "POST") return ((ajustesGF = JSON.parse((await leer(req)).toString()).settings), json({ code: "groupfields", settings: ajustesGF }));
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files` && req.method === "PUT") return (adjuntos.push(...JSON.parse((await leer(req)).toString()).map((f) => f.file_uuid)), json({}));
 		if (ruta === `/api/v4/leads/${LEAD_ID}/files`) return adjuntos.length ? json({ _embedded: { files: adjuntos.map((u) => ({ file_uuid: u })) } }) : (res.writeHead(204), res.end());
 		if (ruta === "/api/v4/contacts/55") return json(contacto);
@@ -149,14 +186,24 @@ export function iniciarKommo({ dirWidget, puerto = 0 }) {
 			return json({
 				archivos: [...archivos].map(([uuid, a]) => ({ uuid, nombre: a.nombre, tipo: a.tipo, tamano: a.datos.length })),
 				adjuntos,
-				pestanas: grupos.map((g) => ({ ...g, campos: campos.filter((c) => c.group_id === g.id).map((c) => c.name) })),
+				pestanas: grupos.map((g) => ({ ...g, campos: campos.filter((c) => c.group_id === g.id).sort((a, b) => a.sort - b.sort).map((c) => c.name) })),
 				valores: valores.map((v) => {
 					const valor = v.values?.[0]?.value;
-					return { campo: campos.find((c) => c.id === v.field_id)?.name, valor: valor?.file_name ?? valor ?? null };
+					return { campo: campos.find((c) => c.id === v.field_id)?.name, valor: v.values?.length > 1 ? v.values.map((x) => x.value) : (valor?.file_name ?? valor ?? null) };
 				}),
+				opciones: Object.fromEntries(campos.filter((c) => c.enums).map((c) => [c.name, c.enums.map((e) => e.value)])),
+				groupFields: JSON.parse(ajustesGF.ring_config),
+				groupFieldsApiKey: ajustesGF.api_key,
 			});
 
 		// ─── Servidor del widget falso (/srv), para el tour ───
+		if (ruta === "/srv/opciones" && req.method === "GET") return json({ opciones: opcionesSrv });
+		if (ruta === "/srv/opciones" && req.method === "POST") {
+			const { lista, valor } = JSON.parse((await leer(req)).toString());
+			(opcionesSrv[lista] ??= []).push(typeof valor === "string" ? valor : { clave: `x_${valor.nombre.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`, nombre: valor.nombre });
+			return json({ opciones: opcionesSrv });
+		}
+		if (ruta === "/srv/ia/traducir") return json({ textos: JSON.parse((await leer(req)).toString()).textos });
 		if (ruta === "/srv/plantilla" && req.method === "GET") return json({ plantilla });
 		if (ruta === "/srv/plantilla" && req.method === "PUT") return ((plantilla = JSON.parse((await leer(req)).toString())), json({ ok: true }));
 		const borr = ruta.match(/^\/srv\/borradores\/(\d+)$/);

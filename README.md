@@ -139,7 +139,9 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `POST /invoices/:numero/pdf` | HTML de la vista previa → PDF carta (Chromium); lo registra y lo guarda en el campo Invoice del lead |
 | `POST /pdf` | PDF de una cotización (sin número, no va a Kommo) |
 | `GET/POST /leads/:lead/imagenes`, `GET /imagenes/:uuid` | Imágenes de referencia: cada una al campo "Imagen N" que indica el widget (`X-Campo-Imagen`) |
-| `POST /ordenes/pdf` | Orden de producción → PDF; con `campo_id`, lo guarda en el campo archivo de la pestaña "Orden de producción" |
+| `POST /ordenes/pdf` | Orden de producción → PDF; con `campo_id`, lo guarda en el campo archivo de la pestaña "Orden" |
+| `GET/POST /opciones` | Opciones compartidas: metales, quilates, piedras, formas, ubicaciones y campos extra de la orden |
+| `POST /ia/traducir` | Traduce los nombres de las filas de la orden (y, si se pide, los valores). Sin IA, los devuelve igual |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
 
 Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud` y `/api/admin` pide además el header
@@ -159,6 +161,7 @@ adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las im
 | Campo | Tipo | Id | Lo usa |
 | --- | --- | --- | --- |
 | Invoice | Archivo | 133486 | La API guarda ahí el PDF (`KOMMO_CAMPO_INVOICE`) |
+| N° de Anillos | Numérico | 283974 | El widget guarda cuántas piezas tiene el invoice; Group Fields muestra esos grupos |
 | Metal | Lista | 133508 | El widget lo precarga (`CAMPOS_PRODUCTO` en `widget/script.js`) |
 | Quilates | Lista | 133510 | Ídem |
 | Piedra | Lista | 133562 | Ídem |

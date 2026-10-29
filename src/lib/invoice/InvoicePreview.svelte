@@ -15,19 +15,26 @@
 <script lang="ts">
 	import { CLAUSULAS, ETIQUETAS, IMAGENES_MUESTRA, fechaLarga, tituloBloque, tituloPieza, money, negritas, numeroFactura, pctTexto, textoAvisoPago, textoClausula, totales, vinetas, type Borrador, type Seccion } from "./invoice.svelte";
 	import { BLOQUES, ESPACIADOS, variables, type Bloque, type Plantilla } from "./plantilla.svelte";
-	import type { Redaccion } from "./servidor";
+	import type { RedaccionInvoice } from "./servidor";
 	import Thumb from "./Thumb.svelte";
 
-	// `redaccion`: texto que devolvió la IA para este borrador; reemplaza viñetas, cláusulas y, en inglés, las etiquetas.
+	// `redaccion`: texto que devolvió la IA para este borrador; reemplaza títulos y viñetas de cada pieza, cláusulas
+	// y, en inglés, las etiquetas.
 	// `elemento`: el <article>, para copiarlo como HTML al generar el PDF.
-	let { d, p, activa = null, onpick, subidas = [], editor, redaccion = null, elemento = $bindable() }: { d: Borrador; p: Plantilla; activa?: Seccion | null; onpick?: (s: Seccion) => void; subidas?: { id: string; url: string }[]; editor?: Editor; redaccion?: Redaccion | null; elemento?: HTMLElement } = $props();
+	let { d, p, activa = null, onpick, subidas = [], editor, redaccion = null, elemento = $bindable() }: { d: Borrador; p: Plantilla; activa?: Seccion | null; onpick?: (s: Seccion) => void; subidas?: { id: string; url: string }[]; editor?: Editor; redaccion?: RedaccionInvoice | null; elemento?: HTMLElement } = $props();
 
 	let t = $derived(totales(d));
-	let lineas = $derived(redaccion?.vinetas ?? vinetas(d));
+	let piezas = $derived(d.piezas.map((x, i) => ({ id: x.id, notas: x.notas.trim(), titulo: redaccion?.piezas[i]?.titulo ?? tituloPieza(x), lineas: redaccion?.piezas[i]?.vinetas ?? vinetas(x) })));
 	// Etiqueta traducida por la IA (claves de etiquetasInvoice) o el texto en español.
 	let traducidas = $derived(Object.fromEntries((redaccion?.etiquetas ?? []).map((e) => [e.clave, e.texto])));
 	const et = (clave: string, es: string) => traducidas[clave] ?? es;
-	let imagenes = $derived(d.imagenes.map((id) => ({ id, tono: IMAGENES_MUESTRA.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })));
+	// Por pieza; con una sola pieza (o una sola con imágenes) no lleva subtítulo.
+	let grupos = $derived(
+		d.piezas
+			.map((x, i) => ({ id: x.id, titulo: `${i + 1}. ${redaccion?.piezas[i]?.titulo ?? tituloPieza(x)}`, imagenes: x.imagenes.map((id) => ({ id, tono: IMAGENES_MUESTRA.find((a) => a.id === id)?.tono ?? 0, url: subidas.find((s) => s.id === id)?.url ?? "" })) }))
+			.filter((g) => g.imagenes.length),
+	);
+	let hayImagenes = $derived(grupos.length > 0);
 	let clausulas = $derived(CLAUSULAS.filter((c) => d.clausulas[c.id].activa).map((c) => ({ ...c, texto: textoClausula(c.id, d), ...redaccion?.clausulas.find((r) => r.id === c.id) })));
 	let politicas = $derived(clausulas.filter((c) => !["pago", "produccion", "terminos"].includes(c.id)));
 	const clausula = (id: string) => clausulas.find((c) => c.id === id);
@@ -79,16 +86,28 @@
 		</dl>
 	{:else if b.id === "descripcion"}
 		{#if b.titulo}<h3 class="mb-2 border-b border-slate-200 pb-1 font-pdf-titulos text-[11.5px] font-bold text-pdf-primario">{titulo(b)} {#if !editor}{@render ia(redaccion ? "redactado por la IA" : "la IA pule la redacción")}{/if}</h3>{/if}
-		<div class="flex justify-between gap-4 font-bold text-pdf-primario">
-			<span>{redaccion?.titulo ?? tituloPieza(d)}</span>
-			<span class="tabular-nums">{money(t.valor)}</span>
-		</div>
-		<ul class="mt-1 list-disc space-y-0.5 pl-5 text-[9.5px] opacity-80">
-			{#each lineas as l, i (i)}<li>{l}</li>{/each}
-			{#if d.notas.trim() && !editor && !redaccion}
-				<li data-no-pdf class="mt-1.5 -ml-5 list-none rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">De tus notas: «{d.notas.trim()}»</li>
-			{/if}
-		</ul>
+		{#each piezas as x, i (x.id)}
+			<div class={i ? "mt-2.5" : ""}>
+				<div class="flex justify-between gap-4 font-bold text-pdf-primario">
+					<span>{piezas.length > 1 ? `${i + 1}. ` : ""}{x.titulo}</span>
+					{#if piezas.length === 1}<span class="tabular-nums">{money(t.valor)}</span>{/if}
+				</div>
+				<ul class="mt-1 list-disc space-y-0.5 pl-5 text-[9.5px] opacity-80">
+					{#each x.lineas as l, j (j)}<li>{l}</li>{/each}
+					{#if x.notas && !editor && !redaccion}
+						<li data-no-pdf class="mt-1.5 -ml-5 list-none rounded border border-dashed border-rj-gold/60 bg-rj-gold-soft/50 px-2 py-1 font-sans text-[9px] text-[#7a5d33] italic">De tus notas: «{x.notas}»</li>
+					{/if}
+				</ul>
+			</div>
+		{:else}
+			<p data-no-pdf class="rounded border border-dashed border-slate-300 py-4 text-center font-sans text-[9px] text-slate-400">Agrega una pieza para armar la descripción.</p>
+		{/each}
+		{#if d.origen}
+			<ul class="mt-1.5 list-disc pl-5 text-[9.5px] opacity-80"><li>{et("vineta_origen", p.textos.vineta_origen)}</li></ul>
+		{/if}
+		{#if piezas.length > 1}
+			<div class="mt-2 flex justify-between gap-4 border-t border-slate-200 pt-1.5 font-bold text-pdf-primario"><span>{d.conTax ? et("valor_pieza", ETIQUETAS.valor_pieza) : et("valor_total_pieza", ETIQUETAS.valor_total_pieza)}</span><span class="tabular-nums">{money(t.valor)}</span></div>
+		{/if}
 	{:else if b.id === "precios"}
 		{@render subtitulo(titulo(b), true)}
 		<table class="w-full tabular-nums">
@@ -144,14 +163,17 @@
 		{:else}{@render apagada()}{/if}
 	{:else if b.id === "imagenes"}
 		{@render subtitulo(titulo(b), false)}
-		{#if imagenes.length}
-			<div class="mt-1 grid gap-2" style:grid-template-columns="repeat({Math.min(p.imagenes.columnas, imagenes.length)}, minmax(0, 1fr))">
-				{#each imagenes as img (img.id)}
-					<div class="aspect-[4/3] overflow-hidden bg-slate-100">
-						{#if img.url}<img src={img.url} alt="" class="size-full object-cover" />{:else}<Thumb tono={img.tono} />{/if}
-					</div>
-				{/each}
-			</div>
+		{#if hayImagenes}
+			{#each grupos as g, i (g.id)}
+				{#if grupos.length > 1}<p class="mt-1.5 mb-1 text-[9px] font-semibold text-pdf-primario {i ? 'pt-1' : ''}">{g.titulo}</p>{/if}
+				<div class="mt-1 grid gap-2" style:grid-template-columns="repeat({Math.min(p.imagenes.columnas, g.imagenes.length)}, minmax(0, 1fr))">
+					{#each g.imagenes as img (img.id)}
+						<div class="aspect-[4/3] overflow-hidden bg-slate-100">
+							{#if img.url}<img src={img.url} alt="" class="size-full object-cover" />{:else}<Thumb tono={img.tono} />{/if}
+						</div>
+					{/each}
+				</div>
+			{/each}
 			{#if p.imagenes.nota}<p class="mt-1.5 text-[8.5px] italic opacity-70">{et("nota_imagenes", p.textos.nota_imagenes)}</p>{/if}
 		{:else}
 			<p data-no-pdf class="rounded border border-dashed border-slate-300 py-4 text-center font-sans text-[9px] text-slate-400">Esta sección no aparecerá si no eliges imágenes.</p>
@@ -186,7 +208,7 @@
 				type="button"
 				data-sec={info.secs.join(" ")}
 				data-bloque={b.id}
-				data-no-pdf={vacio(b.id) || (b.id === "imagenes" && !imagenes.length) ? "" : undefined}
+				data-no-pdf={vacio(b.id) || (b.id === "imagenes" && !hayImagenes) ? "" : undefined}
 				onclick={() => (editor ? editor.onsel(b.id) : onpick?.(info.secs[0]))}
 				onpointerdown={(e) => e.pointerType === "mouse" && editor?.oniniciar(e, b.id)}
 				class="group relative block w-full rounded px-2 py-2 text-left outline-2 transition-[outline-color,background-color,opacity] {resaltado(b.id, info.secs)} {editor ? 'cursor-grab select-none' : ''} {editor?.arrastrando === b.id ? 'opacity-40' : ''} {linea ? `before:absolute before:inset-x-0 before:h-[3px] before:rounded-full before:bg-rj-navy ${linea}` : ''}"

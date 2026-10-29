@@ -82,6 +82,31 @@ export async function redactar(p: PedidoRedaccion, modelo: string, apiKey: strin
 	return validar(p, JSON.parse(res.output_text) as Respuesta);
 }
 
+const INSTRUCCIONES_TRADUCIR = `Traduces textos cortos de una orden de producción de joyería (nombres de campos y sus valores).
+Devuelve "textos" con la traducción de cada uno, en el mismo orden y la misma cantidad, al idioma indicado ("es" español, "en" inglés).
+Si un texto ya está en ese idioma, o es un código, número o nombre propio, devuélvelo igual. Nunca cambies cifras ni medidas.
+Usa los términos de joyería habituales ("Width" → "Ancho", "Head style" → "Estilo de cabeza", "Oro amarillo" → "Yellow Gold").`;
+
+const ESQUEMA_TRADUCIR = { type: "object", additionalProperties: false, required: ["textos"], properties: { textos: { type: "array", items: { type: "string" } } } } as const;
+
+export async function traducir(idioma: "es" | "en", textos: string[], modelo: string, apiKey: string): Promise<string[]> {
+	cliente ??= new OpenAI({ apiKey });
+	const res = await cliente.responses.create({
+		model: modelo,
+		instructions: INSTRUCCIONES_TRADUCIR,
+		input: JSON.stringify({ idioma, textos }),
+		text: { format: { type: "json_schema", name: "traduccion", strict: true, schema: ESQUEMA_TRADUCIR } },
+	});
+	return validarTraduccion(textos, (JSON.parse(res.output_text) as { textos: string[] }).textos);
+}
+
+// Uno por uno: si la IA perdió un texto o le cambió una cifra, queda el original.
+export const validarTraduccion = (antes: string[], despues: unknown) =>
+	antes.map((t, i) => {
+		const nuevo = Array.isArray(despues) ? despues[i] : undefined;
+		return typeof nuevo === "string" && nuevo.trim() && mismasCifras(t, nuevo) ? nuevo : t;
+	});
+
 export function validar(p: PedidoRedaccion, r: Respuesta): Redaccion {
 	const descartadas: string[] = [];
 	const original = [p.pieza, ...p.vinetas].join(" ");

@@ -1,10 +1,13 @@
 // Borrador del invoice: lo que el asesor llena en el widget de la tarjeta del lead.
 // Los datos del lead llegan de Kommo (widget/script.js); los montos se calculan aquí, nunca en la IA.
-// El borrador se guarda en el servidor, por lead, para que cualquier asesor lo retome.
+// El borrador se guarda en la app, por lead, para que cualquier asesor lo retome. La orden de producción usa
+// el mismo borrador: cada pieza del invoice es un anillo de la orden.
+import { PEDIDO_EN_KOMMO, POR_DEFECTO_ANILLO, POR_DEFECTO_PEDIDO } from "./campos";
+import { incluye, mezclarOpciones, OPCIONES_BASE, type CampoExtra, type ListaCampo, type ListaOpcion, type Opciones } from "./opciones";
 import { plantilla, rellenar } from "./plantilla.svelte";
-import { guardarBorradorServidor, hayServidor, leerBorradorServidor } from "./servidor";
+import { agregarOpcionServidor, guardarBorradorServidor, hayServidor, leerBorradorServidor, leerOpcionesServidor, type OrdenKommo } from "./servidor";
 
-// `producto`: campos del lead en Kommo (Metal, Quilates, Piedra, Talla), si están llenos.
+// `producto`: campos sueltos del lead en Kommo (Metal, Quilates, Piedra, Talla), de antes de los grupos por anillo.
 export type Producto = { metal?: string; quilates?: string; piedra?: string; talla?: string };
 export type Lead = { id: number; nombre: string; contacto: string; email: string; responsable: string; presupuesto: number; producto?: Producto };
 
@@ -18,9 +21,23 @@ export const LEAD_EJEMPLO: Lead = {
 	responsable: "Yan Romero",
 };
 
-export type Metal = "amarillo" | "blanco" | "rosa" | "platino" | "otro";
-export type Posicion = "central" | "lateral" | "pave";
-export type Piedra = { id: number; tipo: string; origen: "natural" | "laboratorio"; corte: string; tamano: string; cantidad: string; posicion: Posicion };
+export type Piedra = { id: number; tipo: string; origen: "natural" | "laboratorio"; corte: string; tamano: string; cantidad: string; posicion: string };
+// `orden`: lo de la orden de producción que el invoice no tiene. `campos`: filas de su "Cad Details Ring";
+// `valores`: lo escrito en ellas (en las que salen del invoice, solo si el asesor lo cambió).
+export type Pieza = {
+	id: number;
+	tipo: string;
+	metal: string;
+	kilates: string;
+	solido: boolean;
+	piedras: Piedra[];
+	talla: string;
+	tallaPorConfirmar: boolean;
+	grabado: string;
+	notas: string;
+	imagenes: string[];
+	orden: { campos: string[]; valores: Record<string, string> };
+};
 export type Seccion = "cliente" | "pieza" | "pago" | "entrega" | "imagenes" | "condiciones";
 
 // modo "auto": se reparte lo que dejan libre los depósitos fijados (por % o por monto).
@@ -28,23 +45,18 @@ export type Deposito = { id: number; nombre: string; modo: "auto" | "pct" | "mon
 
 export const SECCIONES: { id: Seccion; nombre: string }[] = [
 	{ id: "cliente", nombre: "Cliente" },
-	{ id: "pieza", nombre: "Pieza" },
+	{ id: "pieza", nombre: "Piezas" },
 	{ id: "pago", nombre: "Precio y pagos" },
 	{ id: "entrega", nombre: "Entrega" },
 	{ id: "imagenes", nombre: "Imágenes" },
 	{ id: "condiciones", nombre: "Condiciones" },
 ];
 
-export const TIPOS_PIEZA = ["Anillo de compromiso", "Anillo de boda", "Anillo de boda para hombre", "Anillo a la medida", "Aretes", "Collar", "Pulsera", "Dije"];
-export const TIPOS_PIEDRA = ["Diamante", "Esmeralda", "Zafiro", "Rubí", "Moissanita", "Morganita"];
-export const CORTES = ["Redondo", "Oval", "Pera", "Marquesa", "Esmeralda", "Princesa", "Cojín", "Radiante"];
-export const METALES: { id: Metal; nombre: string; color: string }[] = [
-	{ id: "amarillo", nombre: "Oro amarillo", color: "#D9B45A" },
-	{ id: "blanco", nombre: "Oro blanco", color: "#D8DCE2" },
-	{ id: "rosa", nombre: "Oro rosa", color: "#E2A88E" },
-	{ id: "platino", nombre: "Platino", color: "#B9BEC6" },
-	{ id: "otro", nombre: "Otro", color: "conic-gradient(#D9B45A 0 33%, #D8DCE2 0 66%, #E2A88E 0)" },
-];
+const COLORES_METAL: Record<string, string> = { "oro amarillo": "#D9B45A", "oro blanco": "#D8DCE2", "oro rosa": "#E2A88E", platino: "#B9BEC6" };
+export const colorMetal = (m: string) => COLORES_METAL[m.trim().toLowerCase()] ?? "conic-gradient(#D9B45A 0 33%, #D8DCE2 0 66%, #E2A88E 0)";
+// Los quilates (y "oro sólido") solo aplican a los metales de oro, incluidos los que agregue un asesor.
+export const esOro = (m: string) => /\boro\b/i.test(m);
+
 export const VENCIMIENTOS = ["Al recibir (para iniciar producción)", "7 días después de la emisión", "15 días después de la emisión"];
 export const MOMENTOS_PAGO = ["para iniciar la producción", "al aprobar el diseño CAD", "al completar la pieza, antes de la entrega", "en abonos a disposición del cliente, antes de la entrega"];
 
@@ -66,6 +78,32 @@ export const IMAGENES_MUESTRA = [
 	{ id: "muestra-2", tono: 205 },
 ];
 
+// ─── Opciones compartidas (metales, quilates, piedras…) ──────────────────────
+export const opciones: Opciones = $state(mezclarOpciones(null));
+
+export async function cargarOpciones() {
+	if (!hayServidor()) return;
+	try {
+		Object.assign(opciones, mezclarOpciones(await leerOpcionesServidor()));
+	} catch (e) {
+		console.warn("[invoice] no se pudieron leer las opciones:", e);
+	}
+}
+
+// Queda para todos los clientes. Si la app no responde, queda al menos en esta ventana.
+export async function agregarOpcion(lista: ListaOpcion, valor: string) {
+	const v = valor.trim();
+	if (!v || incluye(opciones[lista], v)) return;
+	opciones[lista].push(v);
+	if (hayServidor()) Object.assign(opciones, mezclarOpciones(await agregarOpcionServidor(lista, v)));
+}
+
+export async function agregarCampo(lista: ListaCampo, campo: CampoExtra) {
+	if (opciones[lista].some((c) => c.clave === campo.clave)) return;
+	opciones[lista].push(campo);
+	if (hayServidor()) Object.assign(opciones, mezclarOpciones(await agregarOpcionServidor(lista, campo)));
+}
+
 let siguienteId = 10;
 const dep = (nombre: string, momento: string, modo: Deposito["modo"] = "auto", valor = 0): Deposito => ({
 	id: siguienteId++, nombre, modo, pct: modo === "pct" ? valor : 0, monto: modo === "monto" ? valor : 0, momento, fecha: "",
@@ -83,28 +121,60 @@ const hoy = () => {
 	return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
 };
 
-// Lo que traen los campos de producto del lead, en el formato del borrador.
-function desdeProducto(p: Producto = {}) {
-	const out: { metal?: Metal; metalOtro?: string; kilates?: string; piedras?: Piedra[]; talla?: string; tallaPorConfirmar?: boolean } = {};
-	if (p.metal?.trim()) {
-		const t = p.metal.toLowerCase();
-		const m = METALES.find((x) => x.id !== "otro" && (t.includes(x.id) || t.includes(x.nombre.toLowerCase())));
-		Object.assign(out, m ? { metal: m.id } : { metal: "otro", metalOtro: p.metal.trim() });
-	}
+// `campos`: las filas de la orden; un anillo nuevo trae las del anterior (con los campos que se le sumaron).
+export function nuevaPieza(datos: Partial<Pieza> = {}, campos: string[] = POR_DEFECTO_ANILLO): Pieza {
+	return {
+		id: siguienteId++,
+		tipo: "",
+		metal: OPCIONES_BASE.metales[0],
+		kilates: "14k",
+		solido: true,
+		piedras: [],
+		talla: "",
+		tallaPorConfirmar: true,
+		grabado: "",
+		notas: "",
+		imagenes: [],
+		...datos,
+		orden: { campos: [...campos], valores: { ...datos.orden?.valores } },
+	};
+}
+
+export function nuevaPiedra(posicion = "Laterales"): Piedra {
+	return { id: siguienteId++, tipo: "Diamante", origen: "laboratorio", corte: "Redondo", tamano: "", cantidad: "1", posicion };
+}
+
+// Lo que traen los campos sueltos del lead (Metal, Quilates, Piedra, Talla): precargan la primera pieza.
+export function desdeProducto(p: Producto = {}): Partial<Pieza> {
+	const out: Partial<Pieza> = {};
+	if (p.metal?.trim()) out.metal = opciones.metales.find((m) => p.metal!.toLowerCase().includes(m.toLowerCase())) ?? p.metal.trim();
 	const k = p.quilates?.match(/\d{2}/)?.[0];
 	if (k) out.kilates = `${k}k`;
-	if (p.piedra?.trim()) {
-		const tipo = TIPOS_PIEDRA.find((x) => x.toLowerCase() === p.piedra!.trim().toLowerCase()) ?? p.piedra.trim();
-		out.piedras = [{ id: siguienteId++, tipo, origen: "natural", corte: "Redondo", tamano: "", cantidad: "1", posicion: "central" }];
-	}
+	if (p.piedra?.trim()) out.piedras = [{ ...nuevaPiedra("Central"), tipo: opciones.piedras.find((x) => x.toLowerCase() === p.piedra!.trim().toLowerCase()) ?? p.piedra.trim(), origen: "natural" }];
 	if (p.talla?.trim()) Object.assign(out, { talla: p.talla.trim(), tallaPorConfirmar: false });
 	return out;
+}
+
+// Valores de un grupo "*Anillo °N*" de Kommo (por clave de KOMMO_ANILLO o campo extra) → pieza.
+export function piezaDesdeKommo(a: Record<string, string | string[]>, campos?: string[]): Pieza {
+	const texto = (k: string) => {
+		const v = a[k];
+		return (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim();
+	};
+	const piedras = (Array.isArray(a.piedra) ? a.piedra : a.piedra ? [a.piedra] : []).map((tipo, i) => ({ ...nuevaPiedra(i === 0 ? "Central" : "Laterales"), tipo, origen: "natural" as const }));
+	const talla = texto("talla") || texto("size");
+	const valores: Record<string, string> = {};
+	for (const [k, v] of Object.entries(a)) if (!["metal", "quilates", "piedra", "talla", "tipo", "size", "grabado", "notas", "halo"].includes(k) && texto(k)) valores[k] = texto(k);
+	return nuevaPieza(
+		{ tipo: texto("tipo"), ...(texto("metal") ? { metal: texto("metal") } : {}), ...(texto("quilates") ? { kilates: texto("quilates") } : {}), piedras, talla, tallaPorConfirmar: !talla, grabado: texto("grabado"), notas: texto("notas"), orden: { campos: [], valores } },
+		campos ?? [...POR_DEFECTO_ANILLO, ...Object.keys(valores).filter((k) => !POR_DEFECTO_ANILLO.includes(k))],
+	);
 }
 
 export function borradorInicial(lead: Lead) {
 	const depositos = PLANES[0].crear();
 	return {
-		// Lo asigna el servidor al generar (RJ-AAAA-NNNN) y se conserva si se vuelve a generar.
+		// Lo asigna la API al generar (RJ-AAAA-NNNN) y se conserva si se vuelve a generar.
 		numero: "",
 		sinCliente: false,
 		cliente: lead.contacto,
@@ -114,20 +184,9 @@ export function borradorInicial(lead: Lead) {
 		preparadoPor: lead.responsable,
 		idioma: "es" as "es" | "en",
 
-		pieza: "",
-		aMedida: true,
-		metal: "amarillo" as Metal,
-		metalOtro: "",
-		kilates: "14k",
-		solido: true,
-		piedras: [] as Piedra[],
-		talla: "",
-		tallaPorConfirmar: true,
-		grabado: "",
+		// Empieza sin piezas: el asesor agrega la primera (precargada con lo que tenga el lead).
+		piezas: [] as Pieza[],
 		origen: false,
-		notas: "",
-
-		...desdeProducto(lead.producto),
 
 		valor: lead.presupuesto,
 		conTax: true,
@@ -140,15 +199,14 @@ export function borradorInicial(lead: Lead) {
 		envio: true,
 		pickup: true,
 
-		imagenes: [] as string[],
 		// texto null = se usa el texto estándar, que se arma con los valores de `params`.
 		clausulas: Object.fromEntries(CLAUSULAS.map((c) => [c.id, { activa: true, texto: null as string | null }])),
 		// Valores por defecto de la plantilla (los edita Romero); en cada invoice se pueden cambiar.
 		params: { ...plantilla.valores },
 		instrucciones: "",
 
-		// Orden de producción: solo lo que el invoice no tiene (lo demás sale de los campos de arriba).
-		produccion: { orden: "", stuller: "", nivoda: "", ancho: "", grosor: "", peso: "", cabeza: "" },
+		// Orden de producción: filas de "Order Details", lo escrito en ellas, e idioma del documento.
+		orden: { campos: [...POR_DEFECTO_PEDIDO], valores: {} as Record<string, string>, idioma: "en" as "es" | "en", traducirValores: false },
 	};
 }
 
@@ -158,27 +216,62 @@ export type Borrador = ReturnType<typeof borradorInicial>;
 export function borradorEjemplo(): Borrador {
 	return {
 		...borradorInicial(LEAD_EJEMPLO),
-		pieza: "Anillo de boda para hombre",
-		piedras: [{ id: siguienteId++, tipo: "Diamante", origen: "natural", corte: "Redondo", tamano: "2 mm", cantidad: "6–7", posicion: "pave" }],
-		notas: "Diamantes color D-F, corte excelente, claridad VS. La cantidad final depende del diseño.",
+		piezas: [
+			nuevaPieza({
+				tipo: "Anillo de bodas para hombre",
+				piedras: [{ id: siguienteId++, tipo: "Diamante", origen: "natural", corte: "Redondo", tamano: "2 mm", cantidad: "6–7", posicion: "Pavé" }],
+				notas: "Diamantes color D-F, corte excelente, claridad VS. La cantidad final depende del diseño.",
+				imagenes: [IMAGENES_MUESTRA[0].id],
+			}),
+		],
 		entregaDesde: hoy(),
-		imagenes: [IMAGENES_MUESTRA[0].id],
 	};
+}
+
+const POSICIONES_VIEJAS: Record<string, string> = { central: "Central", lateral: "Laterales", pave: "Pavé" };
+const METALES_VIEJOS: Record<string, string> = { amarillo: "Oro amarillo", blanco: "Oro blanco", rosa: "Oro rosa", platino: "Platino" };
+
+// Borradores de antes de las piezas: una sola pieza en la raíz y `produccion` para la orden.
+function migrar(g: Record<string, unknown>) {
+	if (Array.isArray(g.piezas)) return g;
+	const v = g as { pieza?: string; aMedida?: boolean; metal?: string; metalOtro?: string; kilates?: string; solido?: boolean; piedras?: Piedra[]; talla?: string; tallaPorConfirmar?: boolean; grabado?: string; notas?: string; imagenes?: string[]; produccion?: Record<string, string> };
+	const { orden = "", stuller = "", nivoda = "", ...delAnillo } = v.produccion ?? {};
+	const tieneAlgo = !!(v.pieza || v.piedras?.length || v.grabado || v.notas || v.imagenes?.length);
+	const pieza = nuevaPieza({
+		tipo: v.pieza && v.aMedida && !/medida/i.test(v.pieza) ? `${v.pieza} a la medida` : (v.pieza ?? ""),
+		metal: v.metal === "otro" ? (v.metalOtro ?? "") : (METALES_VIEJOS[v.metal ?? ""] ?? OPCIONES_BASE.metales[0]),
+		kilates: v.kilates ?? "14k",
+		solido: v.solido ?? true,
+		piedras: (v.piedras ?? []).map((p) => ({ ...p, posicion: POSICIONES_VIEJAS[p.posicion] ?? p.posicion })),
+		talla: v.talla ?? "",
+		tallaPorConfirmar: v.tallaPorConfirmar ?? true,
+		grabado: v.grabado ?? "",
+		notas: v.notas ?? "",
+		imagenes: v.imagenes ?? [],
+		orden: { campos: [], valores: { ...(delAnillo.ancho ? { ancho: delAnillo.ancho } : {}), ...(delAnillo.grosor ? { grosor: delAnillo.grosor } : {}), ...(delAnillo.peso ? { peso: delAnillo.peso } : {}), ...(delAnillo.cabeza ? { cabeza: delAnillo.cabeza } : {}) } },
+	}, delAnillo.cabeza ? [...POR_DEFECTO_ANILLO, "cabeza"] : POR_DEFECTO_ANILLO);
+	return { ...g, piezas: tieneAlgo ? [pieza] : [], orden: { valores: { orden, stuller, nivoda } } };
 }
 
 // Lo guardado se mezcla con un borrador nuevo, así una versión vieja no rompe el formulario.
 function mezclar(base: Borrador, guardado: unknown): Borrador {
 	if (!guardado || typeof guardado !== "object") return base;
-	const g = guardado as Partial<Borrador>;
-	const d: Borrador = { ...base, ...g, params: { ...base.params, ...g.params }, clausulas: { ...base.clausulas, ...g.clausulas }, produccion: { ...base.produccion, ...g.produccion } };
+	const g = migrar(guardado as Record<string, unknown>) as Partial<Borrador>;
+	const d: Borrador = {
+		...base,
+		...g,
+		params: { ...base.params, ...g.params },
+		clausulas: { ...base.clausulas, ...g.clausulas },
+		orden: { ...base.orden, ...g.orden, valores: { ...base.orden.valores, ...g.orden?.valores } },
+	};
 	// Las imágenes que no llegaron a Kommo (subidas sin servidor) no sobreviven a cerrar la ventana.
-	d.imagenes = (d.imagenes ?? []).filter((id) => !id.startsWith("local-"));
-	siguienteId = Math.max(siguienteId, ...d.piedras.map((p) => p.id + 1), ...d.depositos.map((x) => x.id + 1));
+	d.piezas = (d.piezas ?? []).map((p) => ({ ...nuevaPieza(), ...p, imagenes: (p.imagenes ?? []).filter((id) => !id.startsWith("local-")), orden: { campos: p.orden?.campos ?? [...POR_DEFECTO_ANILLO], valores: { ...p.orden?.valores } } }));
+	siguienteId = Math.max(siguienteId, ...d.piezas.flatMap((p) => [p.id + 1, ...p.piedras.map((x) => x.id + 1)]), ...d.depositos.map((x) => x.id + 1));
 	if (!d.depositos.length) Object.assign(d, { depositos: base.depositos, cobrarAhora: base.depositos[0].id });
 	return d;
 }
 
-// Copia local por si el servidor no responde: el asesor no pierde lo que lleva escrito.
+// Copia local por si la app no responde: el asesor no pierde lo que lleva escrito.
 const claveLocal = (leadId: number) => `rj-invoice-borrador-${leadId}`;
 const leerLocal = (leadId: number) => {
 	try {
@@ -207,16 +300,12 @@ export async function guardarBorrador(leadId: number, d: Borrador) {
 	try {
 		localStorage.setItem(claveLocal(leadId), JSON.stringify(d));
 	} catch {
-		// modo privado: queda solo la copia del servidor
+		// modo privado: queda solo la copia de la app
 	}
 	if (hayServidor()) await guardarBorradorServidor(leadId, d);
 }
 
 export const draft: Borrador = $state(borradorInicial(LEAD_EJEMPLO));
-
-export function nuevaPiedra(): Piedra {
-	return { id: siguienteId++, tipo: "Diamante", origen: "laboratorio", corte: "Redondo", tamano: "", cantidad: "1", posicion: "lateral" };
-}
 
 export function nuevoDeposito(n: number) {
 	return dep(`Depósito ${n}`, MOMENTOS_PAGO[2]);
@@ -241,7 +330,7 @@ export function rangoEntrega(desde: string, hasta: string) {
 	return `${fechaLarga(desde)} al ${fechaLarga(hasta)}`;
 }
 
-// Vacío hasta que el servidor asigna el correlativo al generar.
+// Vacío hasta que la API asigna el correlativo al generar.
 export const numeroFactura = (d: Borrador) => (d.sinCliente ? "" : d.numero);
 
 export function totales(d: Borrador) {
@@ -266,28 +355,119 @@ export function totales(d: Borrador) {
 	return { valor, tax, total, depositos, suma, diferencia: r2(total - suma), ahoraDep, ahora, saldo: r2(total - ahora) };
 }
 
-export const tituloPieza = (d: Borrador) => (d.pieza ? `${d.pieza}${d.aMedida && !d.pieza.toLowerCase().includes("medida") ? " a la medida" : ""}` : "Tipo de pieza pendiente");
+export const tituloPieza = (p: Pieza) => p.tipo || "Tipo de pieza pendiente";
+
+// "anillo" / "anillos" / "pieza" / "piezas", para los textos que nombran lo que se fabrica.
+export function nombrePiezas(d: Borrador) {
+	const anillos = d.piezas.length > 0 && d.piezas.every((p) => /anillo/i.test(p.tipo));
+	return (anillos ? "anillo" : "pieza") + (d.piezas.length > 1 ? "s" : "");
+}
+
+// En plural, "tu {pieza}" de los textos de la plantilla pasa a "tus {pieza}".
+const enNumero = (texto: string, d: Borrador) => (d.piezas.length > 1 ? texto.replace(/\btu (\{pieza\})/gi, "tus $1") : texto);
+
+// "14k Oro amarillo" o "Platino": el metal como se lee en la orden y en Kommo.
+export const metalCorto = (p: Pieza) => (esOro(p.metal) && p.kilates ? `${p.kilates} ${p.metal}` : p.metal);
 
 const PLURALES: Record<string, string> = { Rubí: "Rubíes" };
+const POSICION_TEXTO: Record<string, string> = { central: "central", laterales: "a los lados", "pavé": "en pavé" };
 
-// Viñetas que se pueden armar sin IA a partir de los campos. La IA las pule y suma las notas.
-export function vinetas(d: Borrador) {
+// Viñetas que se pueden armar sin IA a partir de los campos de la pieza. La IA las pule y suma las notas.
+export function vinetas(p: Pieza) {
 	const out: string[] = [];
-	const metal = METALES.find((m) => m.id === d.metal)!;
-	if (d.metal === "otro") out.push(d.metalOtro.trim() || "Metal por definir");
-	else out.push(d.metal === "platino" ? "Platino 950" : `${metal.nombre}${d.solido ? " sólido" : ""} de ${d.kilates}`);
-	for (const p of d.piedras) {
-		const plural = !!p.cantidad && p.cantidad !== "1";
-		const tipo = (plural ? PLURALES[p.tipo] ?? p.tipo + "s" : p.tipo).toLowerCase();
-		const origen = p.origen === "laboratorio" ? "de laboratorio" : plural ? "naturales" : "natural";
-		const pos = { central: "central", lateral: "a los lados", pave: "en pavé" }[p.posicion];
-		const texto = [`${plural ? p.cantidad + " " : ""}${tipo} ${origen} ${pos}`, p.corte && `corte ${p.corte.toLowerCase()}`, p.tamano].filter(Boolean).join(", ");
+	if (!p.metal.trim()) out.push("Metal por definir");
+	else if (esOro(p.metal)) out.push(`${p.metal}${p.solido ? " sólido" : ""}${p.kilates ? ` de ${p.kilates}` : ""}`);
+	else out.push(p.metal.toLowerCase() === "platino" ? "Platino 950" : p.metal);
+	for (const x of p.piedras) {
+		const plural = !!x.cantidad && x.cantidad !== "1";
+		const tipo = (plural ? PLURALES[x.tipo] ?? x.tipo + "s" : x.tipo).toLowerCase();
+		const origen = x.origen === "laboratorio" ? "de laboratorio" : plural ? "naturales" : "natural";
+		const pos = POSICION_TEXTO[x.posicion.toLowerCase()] ?? `(${x.posicion.toLowerCase()})`;
+		const texto = [`${plural ? x.cantidad + " " : ""}${tipo} ${origen} ${pos}`, x.corte && `corte ${x.corte.toLowerCase()}`, x.tamano].filter(Boolean).join(", ");
 		out.push(texto[0].toUpperCase() + texto.slice(1));
 	}
-	const talla = d.tallaPorConfirmar || !d.talla ? "Talla por confirmar" : `Talla ${d.talla}`;
-	out.push(d.grabado ? `${talla}, con grabado: ${d.grabado}` : talla);
-	if (d.origen) out.push(plantilla.textos.vineta_origen);
+	const talla = p.tallaPorConfirmar || !p.talla ? "Talla por confirmar" : `Talla ${p.talla}`;
+	out.push(p.grabado ? `${talla}, con grabado: ${p.grabado}` : talla);
 	return out;
+}
+
+// Piedras de una pieza en una línea, para la orden y para Kommo: "6–7 Diamante Redondo 2 mm".
+const resumenPiedra = (x: Piedra) => [x.cantidad && x.cantidad !== "1" ? x.cantidad : "", x.origen === "laboratorio" ? "Lab" : "", x.tipo, x.corte, x.tamano].filter(Boolean).join(" ");
+export const piedrasCentrales = (p: Pieza) => p.piedras.filter((x) => x.posicion.toLowerCase() === "central").map(resumenPiedra).join("; ");
+export const piedrasHalo = (p: Pieza) =>
+	p.piedras
+		.filter((x) => x.posicion.toLowerCase() !== "central")
+		.map((x) => `${resumenPiedra(x)} (${x.posicion})`)
+		.join("; ");
+
+// Valor de una fila de "Cad Details Ring": lo que escribió el asesor o, si no, lo que sale del invoice.
+export function valorAnillo(p: Pieza, clave: string): string {
+	const escrito = p.orden.valores[clave];
+	if (escrito !== undefined && escrito !== "") return escrito;
+	switch (clave) {
+		case "tipo":
+			return p.tipo;
+		case "size":
+			return p.tallaPorConfirmar ? "" : p.talla;
+		case "metal":
+			return metalCorto(p);
+		case "grabado":
+			return p.grabado;
+		case "notas":
+			return p.notas.trim();
+		case "halo":
+			return piedrasHalo(p);
+		case "central":
+			return piedrasCentrales(p);
+	}
+	return escrito ?? "";
+}
+
+// Lo que va a los campos "[N] …" del grupo de cada anillo en Kommo (claves de KOMMO_ANILLO y campos extra).
+export function anilloAKommo(p: Pieza): Record<string, string | string[]> {
+	const out: Record<string, string | string[]> = {
+		metal: p.metal,
+		quilates: esOro(p.metal) ? p.kilates : "",
+		piedra: [...new Set(p.piedras.map((x) => x.tipo))],
+		talla: p.tallaPorConfirmar ? "" : p.talla,
+		tipo: p.tipo,
+		size: valorAnillo(p, "size"),
+		grabado: valorAnillo(p, "grabado"),
+		halo: valorAnillo(p, "halo"),
+		notas: valorAnillo(p, "notas"),
+	};
+	// Width, Thickness, Est. Weight, Head style y los campos creados por los asesores (Center Stone no tiene campo).
+	for (const [k, v] of Object.entries(p.orden.valores)) if (!(k in out) && k !== "central") out[k] = v;
+	return out;
+}
+
+// Lo que va a la pestaña "Orden" del lead: los campos del pedido, un grupo por pieza y "N° de Anillos".
+export const ordenAKommo = (d: Borrador): OrdenKommo => ({
+	cantidad: d.piezas.length,
+	pedido: Object.fromEntries(Object.entries(d.orden.valores).filter(([k]) => PEDIDO_EN_KOMMO.includes(k) || k.startsWith("x_"))),
+	anillos: d.piezas.map(anilloAKommo),
+});
+
+// Lo que se puede cambiar a mano en Kommo y la orden toma al abrirse: los campos que el invoice no tiene.
+const DE_KOMMO = (clave: string) => ["ancho", "grosor", "peso", "cabeza"].includes(clave) || clave.startsWith("x_");
+const textoKommo = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : (v ?? "")).trim();
+
+// Junta lo guardado en Kommo con el borrador: si el borrador aún no tiene piezas, salen de los grupos de anillos
+// del lead; si ya las tiene, solo se toman los campos propios de la orden (los que no salen del invoice).
+export function aplicarKommo(d: Borrador, k: OrdenKommo) {
+	const anillos = k.anillos.slice(0, Math.max(k.cantidad, 0) || k.anillos.length);
+	if (!d.piezas.length) d.piezas = anillos.filter((a) => Object.values(a).some((v) => textoKommo(v))).map((a) => piezaDesdeKommo(a));
+	else
+		anillos.forEach((a, i) => {
+			const p = d.piezas[i];
+			if (!p) return;
+			for (const [clave, v] of Object.entries(a)) {
+				if (!DE_KOMMO(clave) || !textoKommo(v)) continue;
+				p.orden.valores[clave] = textoKommo(v);
+				if (!p.orden.campos.includes(clave)) p.orden.campos.push(clave);
+			}
+		});
+	for (const [clave, v] of Object.entries(k.pedido)) if (v.trim()) d.orden.valores[clave] = v.trim();
 }
 
 const duracion = (meses: number) => (meses % 12 === 0 ? `${meses / 12} ${meses === 12 ? "año" : "años"}` : `${meses} meses`);
@@ -297,7 +477,7 @@ const duracion = (meses: number) => (meses % 12 === 0 ? `${meses / 12} ${meses =
 export function textoEstandar(id: string, d: Borrador): string {
 	const p = d.params;
 	const t = plantilla.textos;
-	const pieza = d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza";
+	const pieza = nombrePiezas(d);
 	switch (id) {
 		case "pago": {
 			const tot = totales(d);
@@ -314,7 +494,7 @@ export function textoEstandar(id: string, d: Borrador): string {
 			return lineas.join(" ");
 		}
 		case "produccion": {
-			const partes = [rellenar(t.produccion, { entrega: rangoEntrega(d.entregaDesde, d.entregaHasta) || "por definir", pieza })];
+			const partes = [rellenar(enNumero(t.produccion, d), { entrega: rangoEntrega(d.entregaDesde, d.entregaHasta) || "por definir", pieza })];
 			if (d.envio) partes.push(t.produccion_envio);
 			if (d.pickup) partes.push(rellenar(t.produccion_pickup, { ciudadPickup: p.ciudadPickup }));
 			if (d.origen) partes.push(rellenar(t.produccion_origen, { diasOrigen: p.diasOrigen }));
@@ -332,8 +512,8 @@ export function textoEstandar(id: string, d: Borrador): string {
 	return "";
 }
 
-// Título de un bloque de la plantilla: {pieza} → "anillo" o "pieza".
-export const tituloBloque = (titulo: string, d: Borrador) => titulo.replaceAll("{pieza}", d.pieza.toLowerCase().includes("anillo") ? "anillo" : "pieza");
+// Título de un bloque de la plantilla: {pieza} → "anillo", "anillos" o "pieza".
+export const tituloBloque = (titulo: string, d: Borrador) => enNumero(titulo, d).replaceAll("{pieza}", nombrePiezas(d));
 
 // Textos fijos del documento. Si el invoice va en inglés, la IA los traduce junto con las condiciones.
 export const ETIQUETAS = {
@@ -363,6 +543,7 @@ export function etiquetasInvoice(d: Borrador): { clave: string; texto: string }[
 		{ clave: "valor_vencimiento", texto: d.vencimiento },
 		{ clave: "aviso_pago", texto: textoAvisoPago(d) },
 		{ clave: "nota_imagenes", texto: plantilla.textos.nota_imagenes },
+		...(d.origen ? [{ clave: "vineta_origen", texto: plantilla.textos.vineta_origen }] : []),
 		...t.depositos.map((x) => ({ clave: `deposito_${x.id}`, texto: x.nombre })),
 		...t.depositos.filter((x) => x.fecha).map((x) => ({ clave: `fecha_${x.id}`, texto: fechaLarga(x.fecha) })),
 	].filter((e) => e.texto.trim());
@@ -382,13 +563,17 @@ export function pendientes(d: Borrador): Pendiente[] {
 	const p: Pendiente[] = [];
 	const t = totales(d);
 	if (!d.sinCliente && !d.cliente.trim()) p.push({ sec: "cliente", msg: "Falta el nombre del cliente", bloquea: true });
-	if (!d.pieza.trim()) p.push({ sec: "pieza", msg: "Falta el tipo de pieza", bloquea: true });
-	if (d.metal === "otro" && !d.metalOtro.trim()) p.push({ sec: "pieza", msg: "Falta describir el metal", bloquea: true });
+	if (!d.piezas.length) p.push({ sec: "pieza", msg: "Falta agregar una pieza", bloquea: true });
+	d.piezas.forEach((x, i) => {
+		const n = d.piezas.length > 1 ? ` de la pieza ${i + 1}` : "";
+		if (!x.tipo.trim()) p.push({ sec: "pieza", msg: `Falta el tipo${n}`, bloquea: true });
+		if (!x.metal.trim()) p.push({ sec: "pieza", msg: `Falta el metal${n}`, bloquea: true });
+	});
 	if (!(t.valor > 0)) p.push({ sec: "pago", msg: "Falta el valor de la pieza", bloquea: true });
 	else if (t.depositos.some((x) => x.montoCalc < 0)) p.push({ sec: "pago", msg: "Un depósito quedó en negativo", bloquea: true });
 	else if (t.diferencia !== 0) p.push({ sec: "pago", msg: `Los depósitos no cuadran con el total (${t.diferencia > 0 ? "faltan" : "sobran"} ${money(Math.abs(t.diferencia))})`, bloquea: true });
 	if (d.entregaHasta && d.entregaDesde && d.entregaHasta < d.entregaDesde) p.push({ sec: "entrega", msg: "La fecha final va antes que la inicial", bloquea: true });
 	if (!d.entregaDesde) p.push({ sec: "entrega", msg: "Sin fecha estimada de entrega", bloquea: false });
-	if (d.imagenes.length === 0) p.push({ sec: "imagenes", msg: "Sin imágenes de referencia", bloquea: false });
+	if (d.piezas.length && d.piezas.every((x) => !x.imagenes.length)) p.push({ sec: "imagenes", msg: "Sin imágenes de referencia", bloquea: false });
 	return p;
 }

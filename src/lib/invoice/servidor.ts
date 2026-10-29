@@ -1,3 +1,5 @@
+import type { CampoExtra, ListaCampo, ListaOpcion } from "./opciones";
+
 // Cliente de la API del widget (src/routes/api de esta misma app): genera el PDF, redacta con IA
 // y guarda la plantilla de diseño compartida. La URL viene del widget en Kommo (o es /api al probar
 // fuera de Kommo), vía configurarServidor().
@@ -10,6 +12,9 @@ export type Redaccion = {
 	descartadas: string[];
 };
 
+// La redacción de todo el invoice: una por pieza (título y viñetas), más las condiciones y etiquetas.
+export type RedaccionInvoice = Omit<Redaccion, "titulo" | "vinetas"> & { piezas: { titulo: string; vinetas: string[] }[] };
+
 let servidor = { url: "", clave: "" };
 
 export function configurarServidor(url: string | undefined, clave: string | undefined) {
@@ -18,12 +23,22 @@ export function configurarServidor(url: string | undefined, clave: string | unde
 
 export const hayServidor = () => !!servidor.url;
 
-// Lo que el widget de Kommo (widget/script.js) hace con la API de Kommo y la sesión del usuario: crear las
-// pestañas y campos del lead, y leer o escribir sus valores. Fuera de Kommo no existe.
+// Lo que la pestaña "Orden" del lead tiene guardado: los campos del pedido y los de cada grupo "*Anillo °N*"
+// (por clave de campos.ts o de un campo extra). `cantidad`: el campo "N° de Anillos".
+export type OrdenKommo = { cantidad: number; pedido: Record<string, string>; anillos: Record<string, string | string[]>[] };
+
+// Lo que el widget de Kommo (widget/script.js) hace con la API de Kommo y la sesión del usuario: crear la
+// pestaña "Orden", los grupos de cada anillo y sus campos, las opciones de los campos de selección, y leer o
+// escribir sus valores. Fuera de Kommo no existe.
 export type Kommo = {
 	campoImagenLibre(leadId: number): PromiseLike<{ id: number; nombre: string }>;
-	valoresOrden(leadId: number): PromiseLike<Record<string, string>>;
-	guardarValoresOrden(leadId: number, valores: Record<string, string>): PromiseLike<Record<string, number>>;
+	leerOrden(leadId: number): PromiseLike<OrdenKommo>;
+	// Crea los grupos que falten, escribe los valores y "N° de Anillos". Devuelve el id del campo del PDF de la orden.
+	guardarOrden(leadId: number, datos: OrdenKommo): PromiseLike<{ pdf?: number }>;
+	// Grupos "*Anillo °1…N*" con sus campos (y Group Fields al día).
+	asegurarAnillos(cantidad: number): PromiseLike<unknown>;
+	agregarOpcion(lista: ListaOpcion, valor: string): PromiseLike<unknown>;
+	crearCampo(donde: "anillo" | "pedido", clave: string, nombre: string): PromiseLike<unknown>;
 };
 
 export class ErrorServidor extends Error {
@@ -67,6 +82,22 @@ export async function guardarBorradorServidor(leadId: number, borrador: unknown)
 	await pedir(`/borradores/${leadId}`, { method: "PUT", body: JSON.stringify(borrador) });
 }
 
+// Opciones compartidas (opciones.ts): las de fábrica más las que agregaron los asesores.
+export async function leerOpcionesServidor(): Promise<unknown> {
+	return (await (await pedir("/opciones")).json()).opciones;
+}
+
+export async function agregarOpcionServidor(lista: ListaOpcion | ListaCampo, valor: string | CampoExtra): Promise<unknown> {
+	return (await (await pedir("/opciones", { method: "POST", body: JSON.stringify({ lista, valor }) })).json()).opciones;
+}
+
+// Traduce textos cortos (nombres de campos de la orden y, si se pide, sus valores). Si la IA no responde o
+// cambia una cifra, queda el original.
+export async function traducir(idioma: "es" | "en", textos: string[]): Promise<string[]> {
+	if (!textos.length) return [];
+	return (await (await pedir("/ia/traducir", { method: "POST", body: JSON.stringify({ idioma, textos }) })).json()).textos;
+}
+
 type Texto = { clave?: string; id?: string; nombre?: string; texto: string };
 export async function redactar(pedido: { idioma: "es" | "en"; pieza: string; vinetas: string[]; notas: string; instrucciones: string; clausulas: Texto[]; etiquetas: Texto[] }): Promise<Redaccion> {
 	return (await pedir("/ia/redactar", { method: "POST", body: JSON.stringify(pedido) })).json();
@@ -84,7 +115,7 @@ export async function generarInvoice(numero: string, html: string, total: number
 	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };
 }
 
-// Orden de producción: con `campoId`, el servidor guarda el PDF en ese campo del lead (pestaña "Orden de producción").
+// Orden de producción: con `campoId`, la API guarda el PDF en ese campo del lead (pestaña "Orden").
 export async function generarOrden(html: string, nombre: string, leadId?: number, campoId?: number) {
 	const res = await pedir("/ordenes/pdf", { method: "POST", body: JSON.stringify({ html, nombre, lead_id: leadId, campo_id: campoId }) });
 	return { pdf: await res.blob(), kommo: (res.headers.get("X-Kommo-Estado") ?? "desactivado") as "guardado" | "error" | "desactivado", detalle: res.headers.get("X-Kommo-Detalle") ?? "" };

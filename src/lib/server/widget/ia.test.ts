@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-const { mismasCifras, mismosMeses, validar } = await import("./ia.ts");
+const { mismasCifras, mismosMeses, validar, validarTraduccion } = await import("./ia.ts");
 
 const pedido = {
 	idioma: "en" as const,
@@ -80,5 +80,11 @@ describe("validar", () => {
 		const r = validar(pedido, { titulo: "x", vinetas: pedido.vinetas, clausulas: [], etiquetas: [] });
 		assert.deepEqual(r.clausulas, pedido.clausulas);
 		assert.deepEqual(r.descartadas, ["pago", "garantia"]);
+	});
+});
+
+describe("validarTraduccion", () => {
+	it("usa la traducción y deja el original donde cambió una cifra o falta", () => {
+		assert.deepEqual(validarTraduccion(["Ancho", "2 mm", "Notas"], ["Width", "3 mm"]), ["Width", "2 mm", "Notas"]);
 	});
 });

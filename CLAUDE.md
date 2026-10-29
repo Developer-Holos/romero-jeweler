@@ -34,6 +34,18 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   se guarda en el campo **Invoice** del lead (Kommo Drive) y se descarga. Si Kommo falla, el PDF se descarga
   igual. Las decisiones y lo que falta verificar están en `docs/DECISIONES.md`.
 - El borrador de cada lead vive en la app (Postgres): lo retoma cualquier asesor. Gana el último guardado.
+- **Varias piezas**: el borrador tiene `piezas[]` (empieza vacío, botón "Agregar la primera pieza"). Cada pieza es un
+  anillo de la orden de producción, con sus piedras, sus imágenes y sus filas de la orden (`pieza.orden`). Los
+  borradores viejos (una sola pieza en la raíz) se migran al cargarlos (`migrar` en `invoice.svelte.ts`).
+- **Opciones compartidas** (`opciones.ts`, `/api/opciones`): tipos de anillo, metales, quilates, piedras, formas,
+  ubicaciones y campos extra de la orden. Las de fábrica están en el código; las que agrega un asesor ("+ Otro metal"…)
+  quedan en la app para todos, y el widget las suma como opción de los campos de selección de Kommo.
+- **Pestaña "Orden"** (la arma `estructura` en `widget/script.js`): arriba los campos del pedido (Order #, Stuller O.#,
+  Nivoda O.#, el PDF de la orden y los que se creen) y después un grupo por anillo con el formato de **Group Fields**:
+  `*Anillo °N*`, los campos `[N] Metal`, `[N] Quilates`… y `*!*`. Los grupos son de la cuenta; Group Fields muestra en
+  cada lead tantos como diga **"N° de Anillos"** (283974), que el widget guarda al generar. Cuando el widget crea un
+  grupo, agrega "Anillo °N" al ajuste `ring_config` de Group Fields (`/api/v4/widgets`). Las pestañas viejas "Widget
+  Invoice" y "Orden de producción" se vacían en "Orden" (campos y valores se conservan) y se borran.
 - **Las pestañas y campos del lead los crea el widget, no la API** (`widget/script.js`, con `$.ajax` a `/api/v4`
   y la sesión del usuario, igual que el widget "IA Campos y Bots"): busca por nombre y crea solo lo que falta. Se
   crean al instalar (`onSave`) y, si faltan, al usarlas. La API solo sube archivos a Drive y los guarda en el
@@ -41,17 +53,21 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 - Las imágenes de referencia van en la pestaña **"Imágenes de la pieza"**: un campo archivo por imagen ("Imagen 1…N").
   Empiezan 3; si un lead los ocupa, el widget crea el siguiente. El borrador guarda solo sus uuid.
 - **Orden de producción** (`OrdenProduccion.svelte` + `OrdenPreview.svelte`, botón aparte en la tarjeta del lead):
-  sale del **mismo borrador que el invoice** (cliente, pieza, pagos, imágenes) con el formato de la ficha de
-  producción de Romero (orden 1146). Lo que el invoice no tiene (Order #, Stuller O.#, Nivoda O.#, Width bottom,
-  Thickness, Est. Weight, Head style) se guarda en la pestaña **"Orden de producción"** del lead, con el PDF en su
-  campo archivo. Si esos campos se cambian a mano en Kommo, la orden los toma al abrirse.
+  sale del **mismo borrador que el invoice** con el formato de la ficha de producción de Romero (orden 1146): "Order
+  Details" y un "Cad Details Ring N" por pieza, con sus imágenes. Cada fila se puede quitar (x) o agregar ("+ Agregar
+  otro campo": uno ya configurado o uno nuevo, que se crea en todos los grupos de anillos). Los nombres de las filas
+  están en `campos.ts` en inglés y español; la orden sale en cualquiera de los dos (los campos creados por los asesores
+  y, si se pide, los valores, los traduce la IA en `/api/ia/traducir`). Lo propio de la orden (Width, Thickness, Est.
+  Weight, Head style, campos creados) manda lo que esté en Kommo: si se cambia a mano allí, la orden lo toma al abrirse.
 - Los textos legales y valores por defecto están en la plantilla (`TEXTOS` / `VALORES` en `plantilla.svelte.ts`) y
   Romero los edita en la pestaña Textos del diseñador. No escribir textos legales en el código.
 - Los montos los calcula el widget; la IA nunca los cambia. La API descarta cualquier texto en el que la IA
   haya alterado una cifra o el mes de una fecha (`src/lib/server/widget/ia.ts`, `validar`).
-- El precio del lead es solo lectura. Los campos de producto se leen por id (`CAMPOS_PRODUCTO` en `widget/script.js`:
-  Metal 133508, Quilates 133510, Piedra 133562, Talla 133564) y, si no aparecen, por nombre. El campo Invoice es el
-  133486 (`KOMMO_CAMPO_INVOICE`).
+- El precio del lead es solo lectura. Los campos sueltos de producto de antes de los grupos (`CAMPOS_PRODUCTO` en
+  `widget/script.js`: Metal 133508, Quilates 133510, Piedra 133562, Talla 133564) no se tocan: si están llenos, precargan
+  la primera pieza. El campo Invoice es el 133486 (`KOMMO_CAMPO_INVOICE`).
+- **Versión del widget** (`manifest.json`): súbela con cada zip nuevo. `script.js` carga `app.js` y `style.css` con
+  `?v=<versión>`; si no cambia, los navegadores siguen usando los viejos (pasó: el widget llamaba a rutas sin `/api`).
 
 ## Comandos
 
@@ -98,7 +114,8 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
 - **Zip del widget**: lo arma `widget/empaquetar.mjs`. `Compress-Archive` de PowerShell 5.1 guarda las
   rutas con `\`, que Kommo no espera.
 - **Tour**: si cambia un texto de la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta en
-  `widget/_tour_src/en.mjs` para las capturas en inglés.
+  `widget/_tour_src/en.mjs` para las capturas en inglés. **Pendiente**: `capturas.mjs` todavía busca el formulario de
+  una sola pieza (`#f-pieza`); hay que adaptarlo a las piezas antes de volver a generar las imágenes.
 - `WIDGET_KEY` es opcional: sin ella la API acepta cualquier pedido que llegue a su URL; con ella exige el
   header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
   `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget.

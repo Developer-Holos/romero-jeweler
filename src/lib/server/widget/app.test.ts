@@ -249,3 +249,21 @@ describe("imágenes del lead", () => {
 		assert.ok(Buffer.from(await descarga.arrayBuffer()).equals(png));
 	});
 });
+
+describe("opciones compartidas", () => {
+	it("suma las que agregan los asesores, sin repetir, y las devuelve con las de fábrica", async () => {
+		const agregar = (lista: string, valor: unknown) => app.request("/opciones", { method: "POST", headers: W, body: JSON.stringify({ lista, valor }) });
+		await agregar("metales", "Plata 925");
+		await agregar("metales", "plata 925");
+		await agregar("camposAnillo", { nombre: "Center Stones" });
+		const { opciones } = await (await app.request("/opciones", { headers: W })).json();
+		assert.deepEqual(opciones.metales.slice(-2), ["Platino", "Plata 925"]);
+		assert.deepEqual(opciones.camposAnillo, [{ clave: "x_center_stones", nombre: "Center Stones" }]);
+		assert.equal((await agregar("cualquiera", "x")).status, 400);
+	});
+
+	it("sin IA, la traducción devuelve los textos tal cual", async () => {
+		const res = await app.request("/ia/traducir", { method: "POST", headers: W, body: JSON.stringify({ idioma: "es", textos: ["Width", "2 mm"] }) });
+		assert.deepEqual((await res.json()).textos, ["Width", "2 mm"]);
+	});
+});
