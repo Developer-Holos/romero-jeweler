@@ -240,6 +240,10 @@ describe("imágenes del lead", () => {
 		const { imagenes } = await (await app.request("/leads/31337/imagenes", { headers: W })).json();
 		assert.deepEqual(imagenes, [{ uuid, nombre: "render frontal.png" }]); // el PDF del invoice no es imagen: no aparece
 
+		const grande = await app.request("/leads/31337/imagenes", { method: "POST", headers: { "X-Widget-Key": "clave-widget", "Content-Type": "image/png" }, body: Buffer.alloc(9 * 1024 * 1024 + 1) });
+		assert.equal(grande.status, 413);
+		assert.match((await grande.json()).error, /más de 9 MB/);
+
 		const descarga = await app.request(`/imagenes/${uuid}`, { headers: W });
 		assert.equal(descarga.headers.get("Content-Type"), "image/png");
 		assert.ok(Buffer.from(await descarga.arrayBuffer()).equals(png));

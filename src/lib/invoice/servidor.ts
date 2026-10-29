@@ -103,6 +103,9 @@ export async function imagenesDelLead(leadId: number): Promise<ImagenKommo[]> {
 }
 
 // `campoId`: campo "Imagen N" del lead donde guardarla (lo elige el widget); sin él, se adjunta al lead.
+// Tope por archivo para subir a Kommo; el widget lo revisa antes de mandar y la API otra vez.
+export const MAX_ARCHIVO = 9 * 1024 * 1024;
+
 export async function subirImagen(leadId: number, archivo: File, campoId?: number): Promise<ImagenKommo> {
 	const headers: Record<string, string> = { "Content-Type": archivo.type || "image/jpeg", "X-Nombre-Archivo": encodeURIComponent(archivo.name) };
 	if (campoId) headers["X-Campo-Imagen"] = String(campoId);

@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		} catch (e) {
 			console.error(`[kommo] orden del lead ${lead_id}:`, e);
 			estado = "error";
-			detalle = e instanceof ErrorKommo ? `Kommo respondió ${e.status}` : "No se pudo subir a Kommo";
+			detalle = e instanceof ErrorKommo ? e.aviso : "No se pudo subir a Kommo";
 		}
 	}
 	return new Response(pdf as Uint8Array<ArrayBuffer>, {

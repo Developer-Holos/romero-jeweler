@@ -2,7 +2,7 @@
 	import { CLAUSULAS, CORTES, etiquetasInvoice, tituloPieza, vinetas, METALES, MOMENTOS_PAGO, PLANES, SECCIONES, TIPOS_PIEDRA, TIPOS_PIEZA, VENCIMIENTOS, borradorInicial, cargarBorrador, guardarBorrador, draft as d, money, nuevaPiedra, nuevoDeposito, pendientes, textoClausula, totales, type Borrador, type Deposito, type Lead, type Seccion } from "./invoice.svelte";
 	import InvoicePreview from "./InvoicePreview.svelte";
 	import { cargarPlantillaServidor, plantilla } from "./plantilla.svelte";
-	import { ErrorServidor, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
+	import { ErrorServidor, MAX_ARCHIVO, generarCotizacion, generarInvoice, hayServidor, htmlDelInvoice, imagenesDelLead, pedirNumero, redactar, subirImagen, urlImagen, type ImagenKommo, type Kommo, type Redaccion } from "./servidor";
 	import { onMount, tick, untrack } from "svelte";
 
 	// `flotante`: ventana sobre la tarjeta del lead en Kommo. `disenoHref`: enlace al editor del diseño, si lo hay.
@@ -153,6 +153,10 @@
 		input.value = "";
 		avisoImagenes = "";
 		for (const f of archivos) {
+			if (f.size > MAX_ARCHIVO) {
+				avisoImagenes = `${f.name} pesa ${(f.size / 1024 / 1024).toFixed(1)} MB: el máximo es ${MAX_ARCHIVO / 1024 / 1024} MB por imagen.`;
+				continue;
+			}
 			subiendo++;
 			try {
 				if (!hayServidor()) throw new ErrorServidor("sin servidor", 503);
@@ -163,7 +167,7 @@
 				urls[img.uuid] = URL.createObjectURL(f);
 				d.imagenes.push(img.uuid);
 			} catch (err) {
-				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${f.name} a Kommo.`;
+				if (!(err instanceof ErrorServidor && err.status === 503)) avisoImagenes = `No se pudo subir ${f.name} a Kommo${err instanceof Error && err.message ? `: ${err.message}` : ""}.`;
 				else {
 					// Sin Kommo en el servidor: la imagen sirve para este invoice, pero no queda guardada en el lead.
 					const id = `local-${crypto.randomUUID()}`;

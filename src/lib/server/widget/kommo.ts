@@ -13,13 +13,18 @@
 //   GET  {drive}/v1.0/files/{uuid}             → nombre, tipo y enlace de descarga
 //   GET/POST /api/v4/leads/custom_fields/groups → pestañas de campos del lead
 //   GET/POST /api/v4/leads/custom_fields        → campos (los de imágenes son de tipo "file")
+import { MAX_ARCHIVO } from "../../invoice/servidor.ts";
+
 export type ArchivoKommo = { uuid: string; version_uuid: string; nombre: string; tamano: number; tipo: string };
 
 export class ErrorKommo extends Error {
 	status: number;
-	constructor(mensaje: string, status: number) {
+	// Lo que ve el asesor en el widget; el mensaje completo queda en el log.
+	aviso: string;
+	constructor(mensaje: string, status: number, aviso = `Kommo respondió ${status}`) {
 		super(mensaje);
 		this.status = status;
+		this.aviso = aviso;
 	}
 }
 
@@ -34,8 +39,17 @@ export const kommoConfigurado = () => !!(config.url && config.token);
 
 const cabeceras = () => ({ Authorization: `Bearer ${config.token}` });
 
+// Si Kommo se cuelga, el widget no se queda esperando: el invoice se descarga igual y avisa.
+const ESPERA = 30_000;
+
 async function pedir(url: string, init: RequestInit = {}) {
-	const res = await fetch(url, { ...init, headers: { ...cabeceras(), ...init.headers } });
+	let res: Response;
+	try {
+		res = await fetch(url, { ...init, headers: { ...cabeceras(), ...init.headers }, signal: AbortSignal.timeout(ESPERA) });
+	} catch (e) {
+		if (e instanceof DOMException && e.name === "TimeoutError") throw new ErrorKommo(`Kommo no respondió en ${ESPERA / 1000} s (${new URL(url).pathname})`, 504, `Kommo no respondió en ${ESPERA / 1000} s`);
+		throw e;
+	}
 	if (!res.ok) throw new ErrorKommo(`Kommo respondió ${res.status} en ${new URL(url).pathname}: ${(await res.text()).slice(0, 300)}`, res.status);
 	return res;
 }
@@ -50,6 +64,7 @@ async function drive() {
 }
 
 export async function subirArchivo(datos: Uint8Array, nombre: string, tipo: string): Promise<ArchivoKommo> {
+	if (datos.length > MAX_ARCHIVO) throw new ErrorKommo(`${nombre} pesa ${datos.length} bytes`, 413, `el archivo pesa más de ${MAX_ARCHIVO / 1024 / 1024} MB`);
 	const d = await drive();
 	const sesion = (await (await pedir(`${d}/v1.0/sessions`, json({ method: "POST", cuerpo: { file_name: nombre, file_size: datos.length, content_type: tipo } }))).json()) as {
 		upload_url: string;

@@ -129,10 +129,12 @@ define(['jquery'], function ($) {
         url: ruta,
         method: metodo,
         dataType: 'json',
+        timeout: 30000,
         contentType: cuerpo ? 'application/json' : undefined,
         data: cuerpo ? JSON.stringify(cuerpo) : undefined
       }).then(function (d) { return d; }, function (xhr) {
-        var detalle = (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.title)) || ('Kommo respondió ' + xhr.status);
+        var detalle = xhr.statusText === 'timeout' ? 'Kommo no respondió en 30 s' :
+          (xhr.responseJSON && (xhr.responseJSON.detail || xhr.responseJSON.title)) || ('Kommo respondió ' + xhr.status);
         return $.Deferred().reject(detalle).promise();
       });
     };
