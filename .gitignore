@@ -27,3 +27,6 @@ vite.config.ts.timestamp-*
 /widget/*.zip
 /widget/_tour_src/capturas/
 /widget/_tour_src/html/
+
+# PGlite local de la API del widget (sin DATABASE_URL)
+/data

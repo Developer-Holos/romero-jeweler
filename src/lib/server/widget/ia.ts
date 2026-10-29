@@ -1,7 +1,6 @@
 // Redacción con OpenAI: pule las viñetas de la descripción (sumando las notas del asesor) y, si el
 // invoice va en inglés, traduce todo: condiciones y etiquetas del documento. Nunca decide montos.
 import OpenAI from "openai";
-import { env } from "./env.ts";
 
 export type PedidoRedaccion = {
 	idioma: "es" | "en";
@@ -71,10 +70,9 @@ const fiel = (antes: string, despues: string, idioma: "es" | "en") => mismasCifr
 
 let cliente: OpenAI | null = null;
 
-// `modelo`: el de la base (PUT /admin/ia) o, si no hay, OPENAI_MODEL.
-export async function redactar(p: PedidoRedaccion, modelo: string): Promise<Redaccion> {
-	if (!env.OPENAI_API_KEY) throw new Error("sin OPENAI_API_KEY");
-	cliente ??= new OpenAI({ apiKey: env.OPENAI_API_KEY });
+// `modelo`: el de la base (PUT /api/admin/ia) o, si no hay, OPENAI_MODEL.
+export async function redactar(p: PedidoRedaccion, modelo: string, apiKey: string): Promise<Redaccion> {
+	cliente ??= new OpenAI({ apiKey });
 	const res = await cliente.responses.create({
 		model: modelo,
 		instructions: INSTRUCCIONES,

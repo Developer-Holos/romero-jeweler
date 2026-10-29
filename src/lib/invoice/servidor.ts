@@ -1,6 +1,6 @@
-// Cliente del servidor externo del widget (carpeta server/): genera el PDF, redacta con IA
-// y guarda la plantilla de diseño compartida. La URL y la clave vienen de los ajustes del
-// widget en Kommo (o del .env al probar fuera de Kommo), vía configurarServidor().
+// Cliente de la API del widget (src/routes/api de esta misma app): genera el PDF, redacta con IA
+// y guarda la plantilla de diseño compartida. La URL viene del widget en Kommo (o es /api al probar
+// fuera de Kommo), vía configurarServidor().
 
 export type Redaccion = {
 	titulo: string;

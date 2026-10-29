@@ -1,4 +1,4 @@
-// Archivos en Kommo: el servidor sube a Kommo Drive y guarda el archivo en el campo archivo que corresponda:
+// Archivos en Kommo: la app sube a Kommo Drive y guarda el archivo en el campo archivo que corresponda:
 // el PDF del invoice en "Invoice", el de la orden en su campo de la pestaña "Orden de producción", y cada imagen
 // en un campo de la pestaña "Imágenes de la pieza". Las pestañas y los campos los crea el widget, no el servidor.
 //
@@ -13,19 +13,26 @@
 //   GET  {drive}/v1.0/files/{uuid}             → nombre, tipo y enlace de descarga
 //   GET/POST /api/v4/leads/custom_fields/groups → pestañas de campos del lead
 //   GET/POST /api/v4/leads/custom_fields        → campos (los de imágenes son de tipo "file")
-import { env } from "./env.ts";
-
 export type ArchivoKommo = { uuid: string; version_uuid: string; nombre: string; tamano: number; tipo: string };
 
 export class ErrorKommo extends Error {
-	constructor(mensaje: string, readonly status: number) {
+	status: number;
+	constructor(mensaje: string, status: number) {
 		super(mensaje);
+		this.status = status;
 	}
 }
 
-export const kommoConfigurado = () => !!(env.KOMMO_BASE_URL && env.KOMMO_ACCESS_TOKEN);
+// La fija servicio.ts con las variables de entorno (y los tests, con un Kommo falso).
+let config = { url: "", token: "" };
+export function configurarKommo(url: string, token: string) {
+	config = { url: url.replace(/\/+$/, ""), token };
+	driveUrl = null;
+}
 
-const cabeceras = () => ({ Authorization: `Bearer ${env.KOMMO_ACCESS_TOKEN}` });
+export const kommoConfigurado = () => !!(config.url && config.token);
+
+const cabeceras = () => ({ Authorization: `Bearer ${config.token}` });
 
 async function pedir(url: string, init: RequestInit = {}) {
 	const res = await fetch(url, { ...init, headers: { ...cabeceras(), ...init.headers } });
@@ -33,7 +40,7 @@ async function pedir(url: string, init: RequestInit = {}) {
 	return res;
 }
 
-const api = (ruta: string, init?: RequestInit) => pedir(env.KOMMO_BASE_URL + ruta, init);
+const api = (ruta: string, init?: RequestInit) => pedir(config.url + ruta, init);
 const json = (init: RequestInit & { cuerpo?: unknown }) => ({ ...init, body: JSON.stringify(init.cuerpo), headers: { "Content-Type": "application/json" } });
 
 let driveUrl: string | null = null;
@@ -75,7 +82,7 @@ export async function adjuntarALead(leadId: number, uuid: string) {
 
 // ─── Pestaña de imágenes del lead ───────────────────────────────────────────
 // La pestaña "Imágenes de la pieza" y sus campos "Imagen N" los crea el WIDGET (widget/script.js), con la sesión
-// de Kommo del usuario. El servidor solo los lee, para listar las imágenes del lead.
+// de Kommo del usuario. La app solo los lee, para listar las imágenes del lead.
 const PESTANA_IMAGENES = "Imágenes de la pieza";
 const PREFIJO_CAMPO = "Imagen ";
 

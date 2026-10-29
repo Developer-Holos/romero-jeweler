@@ -1,10 +1,9 @@
 <script lang="ts">
-	// Páginas para probar el widget fuera de Kommo, con el servidor del .env.
-	import { SERVIDOR_KEY, SERVIDOR_URL } from "$app/env/public";
+	// Páginas para probar el widget fuera de Kommo, contra la API de esta misma app (/api).
 	import { configurarServidor } from "#lib/invoice/servidor.ts";
 
 	let { children } = $props();
-	configurarServidor(SERVIDOR_URL, SERVIDOR_KEY);
+	configurarServidor("/api", "");
 </script>
 
 <svelte:head>

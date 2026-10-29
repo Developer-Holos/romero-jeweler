@@ -2,11 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "server/Dockerfile",
-    "watchPatterns": ["server/**", "pnpm-lock.yaml"]
+    "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "healthcheckPath": "/salud",
+    "healthcheckPath": "/api/salud",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5

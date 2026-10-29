@@ -12,14 +12,15 @@ define(['jquery'], function ($) {
     // - Ambas pantallas son la app de Svelte compilada en app.js (ver
     //   vite.widget.config.ts en el repo romero-jeweler), montada dentro de un
     //   Shadow DOM para que su CSS y el de Kommo no se mezclen.
-    // - El PDF, la IA y la plantilla compartida los resuelve el servidor del
-    //   widget (carpeta server/ del repo), publicado en SERVIDOR_URL (la clave de
-    //   los ajustes solo hace falta si el servidor tiene WIDGET_KEY).
+    // - El PDF, la IA y la plantilla compartida los resuelve la API del widget
+    //   (src/routes/api de la app romero-jeweler, la misma de la página de
+    //   tracking), en SERVIDOR_URL (la clave de los ajustes solo hace falta si la
+    //   app tiene WIDGET_KEY).
 
     var ROOT_ID = 'rj-invoice-root';
 
-    // Servidor del widget publicado en Railway.
-    var SERVIDOR_URL = 'https://romero-jeweler-production.up.railway.app';
+    // API del widget en la app publicada en Railway.
+    var SERVIDOR_URL = 'https://romero-jeweler-production.up.railway.app/api';
 
     // Campos de producto de los leads en la cuenta romerojeweler (Ajustes → Campos).
     // Si un id no aparece en el lead (otra cuenta, campo recreado), se busca por nombre.

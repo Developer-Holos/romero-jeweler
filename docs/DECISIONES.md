@@ -12,20 +12,20 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | --- | --- | --- | --- |
 | 1 | PDF al campo "Invoice" (archivo) del lead | Hecho | API verificada con la cuenta real; falta la prueba desde el widget (#14) |
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
-| 3 | Correlativo `RJ-AAAA-NNNN` del servidor | Hecho · Externo | Que Romero o su contador confirmen el formato |
+| 3 | Correlativo `RJ-AAAA-NNNN` de la API | Hecho · Externo | Que Romero o su contador confirmen el formato |
 | 4 | Railway, cuenta de Holos | Hecho | Publicado; falta agregarle Postgres y las variables |
 | 5 | Clave opcional (basta la URL), sin límite de uso | Hecho | — |
 | 6 | OpenAI de Holos, modelo editable, fallback | Hecho · Por verificar | Probar con la clave real |
 | 7 | La IA traduce todo | Hecho · Por verificar | Revisar un invoice en inglés real |
 | 8 | Imágenes en la pestaña "Imágenes de la pieza" del lead (la crea el widget) | Por verificar | Instalar el widget en la cuenta real; adjuntos de chats sin resolver |
-| 9 | Borrador en el servidor, por lead | Hecho | — |
+| 9 | Borrador en la app (Postgres), por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
 | 12 | Campos de producto y precio del lead solo lectura | Por verificar | Campos creados; probar la precarga con un lead real |
-| 13 | El servidor se queda en este repo | Hecho | — |
+| 13 | La API va dentro de la app de SvelteKit | Hecho | — |
 | 14 | Instalación privada; la hace y la prueba Holos | Externo | Instalar y probar con un lead real |
 
-**Bloquea producción:** #3 (formato), #4 (servidor publicado), #6 (prueba con OpenAI), #10 (textos de Romero),
+**Bloquea producción:** #3 (formato), #4 (app publicada con Postgres), #6 (prueba con OpenAI), #10 (textos de Romero),
 #11 (sales tax) y #14 (prueba con el widget instalado en la cuenta real, que cubre también #12).
 
 **Lead de prueba en Kommo:** 407872 ("prueba", embudo Ventas). Quedaron en él, de la verificación del 2026-10-20,
@@ -41,14 +41,14 @@ Piedra 133562 · Talla 133564.
 **Decisión:** el PDF se guarda en un campo del lead llamado **Invoice**, de tipo archivo. Además se descarga.
 
 **Hecho:**
-- El servidor sube el PDF a Kommo Drive y lo pone en el campo (`server/src/kommo.ts`, `POST /invoices/:numero/pdf`).
+- La API sube el PDF a Kommo Drive y lo pone en el campo (`src/lib/server/widget/kommo.ts`, `POST /api/invoices/:numero/pdf`).
 - Si Kommo falla, el PDF se descarga igual y el widget avisa ("No se pudo guardar en el lead…").
 - El campo guarda un solo archivo: un invoice nuevo del mismo lead reemplaza al anterior en el campo. El historial
   completo queda en la tabla `invoices` de Postgres.
 
 **Falta:**
 - ~~Crear el campo "Invoice"~~ Creado el 2026-10-20: **id 133486**, tipo archivo. Va en `KOMMO_CAMPO_INVOICE`.
-- ~~Verificar la API con la cuenta real~~ **Verificado el 2026-10-20** con `server/src/kommo.ts` y el token de la
+- ~~Verificar la API con la cuenta real~~ **Verificado el 2026-10-20** con `kommo.ts` (entonces en `server/src`) y el token de la
   cuenta, en el lead de prueba 407872: la subida a Kommo Drive (`drive-c.kommo.com`, sesión + partes) devuelve
   `uuid` y `version_uuid`, y el campo Invoice acepta el valor `{ file_uuid, version_uuid, file_name, file_size }`
   (Kommo corrige `file_size` con el tamaño real).
@@ -59,14 +59,14 @@ Piedra 133562 · Talla 133564.
 **Decisión:** Postgres gestionado, con `DATABASE_URL`.
 
 **Hecho:** tablas `ajustes` (plantilla y modelo de IA), `borradores` (por lead), `contadores` e `invoices`
-(`server/src/db.ts`). El esquema se crea solo al arrancar. Sin `DATABASE_URL` el servidor usa PGlite (Postgres en
-WASM) en `server/data/`, para desarrollar y para los tests.
+(`src/lib/server/widget/db.ts`). El esquema se crea solo con el primer pedido. Sin `DATABASE_URL` la app usa PGlite
+(Postgres en WASM) en `data/`, para desarrollar y para los tests.
 
 **Falta:** agregar Postgres al proyecto de Railway (inyecta `DATABASE_URL`).
 
 ## 3. Numeración de facturas
 
-**Decisión:** correlativo asignado por el servidor: `RJ-2026-0001`, `RJ-2026-0002`…
+**Decisión:** correlativo asignado por la API: `RJ-2026-0001`, `RJ-2026-0002`…
 
 **Hecho:**
 - El número se asigna al generar, antes de armar el PDF, porque va impreso en él. La asignación es atómica: dos
@@ -78,20 +78,27 @@ WASM) en `server/data/`, para desarrollar y para los tests.
 
 **Falta:** que Romero o su contador confirmen el formato `RJ-AAAA-NNNN` y el reinicio anual.
 
-## 4. Dónde se publica el servidor
+## 4. Dónde se publica
 
 **Decisión:** Railway, en la cuenta de Holos.
 
-**Publicado** en `https://romero-jeweler-production.up.railway.app`, que está fijo en el widget (`SERVIDOR_URL` en `widget/script.js`).
+**Cambio (2026-10-29):** el servidor aparte (`server/`) se quitó. El `railway.json` de la raíz que lo publicaba hacía
+que Railway construyera solo ese servidor, y la **página de tracking dejó de existir**. Ahora la API del widget son
+rutas de SvelteKit (`src/routes/api`) dentro de la misma app: **un solo servicio** con tracking (`/orders/…`) y API
+(`/api/…`).
 
-**Hecho:** `server/Dockerfile` (imagen oficial de Playwright, con Chromium) y `server/railway.json` (healthcheck en
-`/salud`). Se construye desde la raíz del repo.
+**Publicado** en `https://romero-jeweler-production.up.railway.app`; el widget usa `…/api` (`SERVIDOR_URL` en
+`widget/script.js`).
+
+**Hecho:** `Dockerfile` de la raíz (imagen oficial de Playwright, con Chromium; `vite build` con adapter-node y
+`node build`) y `railway.json` de la raíz (healthcheck en `/api/salud`).
 
 **Falta (Holos):**
-1. Crear el servicio en Railway desde este repo, con *Config file path* `server/railway.json`.
+1. Que el servicio de Railway use el `railway.json` de la raíz (si tenía *Config file path* `server/railway.json`,
+   borrarlo).
 2. Agregar Postgres al proyecto.
 3. Variables: `ADMIN_KEY`, `OPENAI_API_KEY`, `KOMMO_SUBDOMAIN`, `KOMMO_ACCESS_TOKEN`,
-   `KOMMO_CAMPO_INVOICE` y `ORIGENES` con `https://romerojeweler.kommo.com` (ver `server/.env.example`).
+   `KOMMO_CAMPO_INVOICE` y `ORIGENES` con `https://romerojeweler.kommo.com` (ver `.env.example`).
 4. Revisar que la versión de la imagen del `Dockerfile` coincida con la de `playwright` del lockfile.
 
 El `Dockerfile` no se pudo probar en local (no hay Docker en el equipo de desarrollo).
@@ -118,8 +125,8 @@ fallback al texto estándar.
 **Hecho:**
 - El modelo queda guardado en Postgres. Se consulta y se cambia con la clave de administración:
   ```sh
-  curl -H "X-Admin-Key: $ADMIN_KEY" https://<servidor>/admin/ia
-  curl -X PUT -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" -d '{"modelo":"gpt-5-mini"}' https://<servidor>/admin/ia
+  curl -H "X-Admin-Key: $ADMIN_KEY" https://romero-jeweler-production.up.railway.app/api/admin/ia
+  curl -X PUT -H "X-Admin-Key: $ADMIN_KEY" -H "Content-Type: application/json" -d '{"modelo":"gpt-5-mini"}' https://romero-jeweler-production.up.railway.app/api/admin/ia
   ```
   `OPENAI_MODEL` es solo el modelo inicial.
 - Si la IA no responde o falla, el invoice sale igual con el texto estándar y el widget lo avisa.
@@ -136,7 +143,7 @@ tope por clave, ver #5).
   "Total a pagar ahora"…), los títulos de los bloques, las fechas, el lema y los nombres de los depósitos
   (`etiquetasInvoice` en `src/lib/invoice/invoice.svelte.ts`).
 - El control de cifras ahora **también cubre las fechas**: si la IA cambia un número o el mes de una fecha
-  ("octubre" → "November"), ese texto queda en el original (`server/src/ia.ts`, tests en `ia.test.ts`).
+  ("octubre" → "November"), ese texto queda en el original (`src/lib/server/widget/ia.ts`, tests en `ia.test.ts`).
 - Sin IA, el invoice en inglés sale en español (como se decidió) y el widget lo avisa.
 
 **Falta:** revisar un invoice real en inglés, con OpenAI activo.
@@ -204,9 +211,10 @@ Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rub
 **Falta:** probar la precarga con un lead real, y verificar ahí el nombre del responsable
 (`APP.constant('managers')`) y que el panel aparezca a la primera.
 
-## 13. Repositorio del servidor
+## 13. Dónde vive la API
 
-**Decisión:** se queda en este repo. **Hecho.** Railway despliega solo `server/` (ver #4).
+**Decisión:** en este repo. **Hecho:** desde el 2026-10-29 es parte de la app de SvelteKit (`src/routes/api`), no un
+servidor aparte (ver #4).
 
 ## 14. Instalación y distribución del widget
 
