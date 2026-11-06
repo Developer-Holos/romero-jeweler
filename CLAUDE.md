@@ -13,6 +13,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 | Tracking de pedidos | `src/routes/orders/[lead_id]`, `src/lib/kommo`, `src/lib/tracking` | Página pública con la etapa de producción del pedido, leída de Kommo. Todo error (404 de rutas sin página, pedido inexistente, 5xx) lo muestra `src/routes/+error.svelte`, en español e inglés |
 | Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices y de órdenes de producción (tarjeta del lead) y editor del diseño (ajustes avanzados) |
 | API del widget | `src/routes/api` + `src/lib/server/widget` | Rutas de SvelteKit que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
+| Seguimientos con IA | `src/routes/api/kommo`, `src/routes/api/seguimientos` + `mensajes.ts`, `seguimientos.ts` | Webhooks de Kommo: guarda el chat comprimido y, con la señal del bot (día 3 y 7), pide a OpenAI el mensaje, lo deja en "[V] Mensaje Seguimiento" y lanza el Bot 10394 |
 | Video del cliente | `src/routes/api/videos` + `src/lib/server/widget/dropbox.ts`, `videos.ts` | Webhook de Dropbox: cuando aparece `<orden>/<orden>_completo.mp4`, guarda el link en el lead con ese "Order #" y lanza el Salesbot que se lo manda |
 
 ## Arquitectura del widget de invoice
@@ -143,6 +144,13 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   El webhook tiene que recibir JSON: con `text/plain` SvelteKit lo corta por CSRF. `search_v2` tarda en indexar: con
   `DROPBOX_RAIZ` se va directo a la carpeta. "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
   crea); la API busca el primero por nombre, el segundo lo marca el Salesbot.
+- **Webhooks de Kommo (seguimientos)**: Kommo no firma sus webhooks; los protege `KOMMO_WEBHOOK_KEY` en la URL (`?clave=`,
+  `rechazarWebhookKommo` en `servicio.ts`). Llegan como formulario y sin `Origin`, y SvelteKit los cortaría por CSRF antes
+  de `handle`: por eso `vite.config.ts` tiene `csrf.trustedOrigins: ['*']`. Es seguro mientras la app no tenga form
+  actions ni cookies de sesión; si algún día los tiene, hay que volver a cerrarlo. La conversación vive en un blob
+  brotli por lead (`mensajes.ts`, el `for update` evita pisarse entre webhooks); `seguimientos` tiene una fila por lead y día
+  (`unique (lead_id, fecha)`) y reutiliza el mensaje ya generado en los reintentos. Riesgo conocido: si el bot llega a
+  ejecutarse pero Kommo responde error o timeout, el reintento lo vuelve a lanzar (doble envío).
 - **API de Kommo Drive y campo archivo** (`src/lib/server/widget/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
   el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
   nunca uno de un cliente.

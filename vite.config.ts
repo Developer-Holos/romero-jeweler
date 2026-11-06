@@ -15,7 +15,11 @@ export default defineConfig({
 			},
 
 			// Railway corre la app con Node (Dockerfile): tracking y la API del widget en un solo servicio.
-			adapter: adapter()
+			adapter: adapter(),
+
+			// Kommo manda sus webhooks como formulario y sin Origin: SvelteKit los cortaría por CSRF. La app no tiene form
+			// actions ni cookies de sesión (todo va con claves en headers o en la URL), así que no hay nada que proteger.
+			csrf: { trustedOrigins: ['*'] }
 		})
 	],
 	test: {

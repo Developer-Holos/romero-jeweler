@@ -38,11 +38,20 @@ process.once("sveltekit:shutdown", async () => {
 
 export const modeloIa = async () => (await leerAjuste<string>(await db(), "modelo_ia")) ?? env.OPENAI_MODEL;
 
+export const seguimientoConfig = async () => ({ campo: env.KOMMO_CAMPO_SEGUIMIENTO, bot: env.KOMMO_BOT_SEGUIMIENTO, apiKey: env.OPENAI_API_KEY, modelo: await modeloIa() });
+
 export const iguales = (recibida: string | null, esperada: string) => {
 	const a = Buffer.from(recibida ?? "");
 	const b = Buffer.from(esperada);
 	return a.length === b.length && timingSafeEqual(a, b);
 };
+
+// Los webhooks de Kommo no van firmados: llevan una clave en la URL (?clave=…). null si está bien; si no, la respuesta de error.
+export function rechazarWebhookKommo(url: URL) {
+	if (!env.KOMMO_WEBHOOK_KEY) return fallo("Los webhooks de Kommo no están configurados", 503);
+	if (!iguales(url.searchParams.get("clave"), env.KOMMO_WEBHOOK_KEY)) return fallo("Clave inválida", 401);
+	return null;
+}
 
 export const MB = 1024 * 1024;
 

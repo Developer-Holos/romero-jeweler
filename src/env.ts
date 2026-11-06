@@ -26,5 +26,10 @@ export const variables = defineEnvVars({
   DROPBOX_REFRESH_TOKEN: { schema: opcional, description: 'Refresh token (token_access_type=offline)' },
   DROPBOX_RAIZ: { schema: (v) => opcional(v) ?? '', description: 'Carpeta que contiene las carpetas de las órdenes. Vacía: se buscan por nombre en todo Dropbox' },
   DROPBOX_API_URL: { schema: opcional, description: 'Solo para probar con un Dropbox simulado' },
-  KOMMO_BOT_VIDEO: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del Salesbot que manda el link del video. Sin él, solo se guarda el link y una nota' }
+  KOMMO_BOT_VIDEO: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del Salesbot que manda el link del video. Sin él, solo se guarda el link y una nota' },
+
+  // Seguimientos con IA (/api/kommo/mensajes y /api/seguimientos). Sin KOMMO_WEBHOOK_KEY quedan apagados.
+  KOMMO_WEBHOOK_KEY: { schema: opcional, description: 'Clave que va en la URL de los webhooks de Kommo (?clave=…): Kommo no los firma' },
+  KOMMO_CAMPO_SEGUIMIENTO: { schema: (v) => Number(opcional(v)) || 463316, description: 'Id del campo "[V] Mensaje Seguimiento" del lead' },
+  KOMMO_BOT_SEGUIMIENTO: { schema: (v) => Number(opcional(v)) || 10394, description: 'Id del Salesbot que envía el mensaje de seguimiento' }
 });

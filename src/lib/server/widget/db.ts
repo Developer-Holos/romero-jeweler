@@ -48,6 +48,28 @@ const ESQUEMA = `
 		creado timestamptz not null default now(),
 		actualizado timestamptz not null default now()
 	);
+	-- Chat de cada lead (para los seguimientos): un blob comprimido por lead.
+	create table if not exists conversaciones (
+		lead_id bigint primary key,
+		datos bytea not null,
+		cantidad int not null default 0,
+		actualizado timestamptz not null default now()
+	);
+	-- Un seguimiento por lead y día: la clave única evita enviar dos veces el mismo si la señal llega repetida.
+	create table if not exists seguimientos (
+		id serial primary key,
+		lead_id bigint not null,
+		dia int,
+		fecha date not null default current_date,
+		estado text not null default 'pendiente',
+		intentos int not null default 0,
+		mensaje text,
+		error text,
+		tomado timestamptz,
+		creado timestamptz not null default now(),
+		actualizado timestamptz not null default now(),
+		unique (lead_id, fecha)
+	);
 	do $$ begin
 		if exists (select 1 from information_schema.columns where table_name = 'videos' and column_name = 'path') then
 			alter table videos rename column path to carpeta;

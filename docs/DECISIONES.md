@@ -292,6 +292,18 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 "Ocultar índice" en vez de "Ocultar", y menos texto en las ayudas.
 
 
+## Seguimientos con IA (2026-11-06)
+
+- **Mensajes**: se guardan los de los dos lados (cliente y asesor) para que la IA no repita lo que ya se dijo. Un blob
+  comprimido por lead (brotli, últimos 200 mensajes, 2000 caracteres cada uno): comprimir mensaje a mensaje no sirve porque
+  un texto corto crece.
+- **Si el cliente ya respondió** lo decide el bot de Kommo (por ejemplo, sacando al lead de "Seguimiento"): el servidor
+  genera y envía siempre que llega la señal.
+- **Seguridad**: clave en la URL (Kommo no firma) y CSRF de SvelteKit desactivado (ver `CLAUDE.md`).
+- **Reintentos**: 5 intentos, con repaso cada 5 min durante 48 h, y una nota en el lead al rendirse.
+- **Pendiente**: ajustar el prompt (`INSTRUCCIONES_SEGUIMIENTO` en `ia.ts`) con ejemplos reales de Romero, y decidir qué hacer
+  con el doble envío si el bot se ejecuta pero Kommo responde con error.
+
 ## Video del cliente (Dropbox)
 
 **Pedido (2026-11-03):** detectar cuándo el video del cliente está terminado en Dropbox y automatizar en Kommo el

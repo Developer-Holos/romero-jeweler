@@ -158,6 +158,28 @@ pnpm build && pnpm preview   # o `node build`; sin DATABASE_URL usa PGlite en da
 En Railway, el `Dockerfile` usa la imagen de Playwright (Chromium para los PDF) y fija `BODY_SIZE_LIMIT=25M`:
 adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las imágenes adentro.
 
+### Seguimientos con IA
+
+Los leads que pasan a la etapa "Seguimiento" reciben un mensaje escrito por IA a los 3 y a los 7 días. Kommo avisa y
+la app hace el resto:
+
+1. **Webhook de mensajes** (Kommo → app): `POST /api/kommo/mensajes?clave=<KOMMO_WEBHOOK_KEY>`, con los eventos de
+   mensaje entrante y saliente. Cada mensaje (del cliente y del asesor) se guarda en la tabla `conversaciones`: una
+   fila por lead, JSON compacto comprimido con brotli, los últimos 200 mensajes, sin repetir ids.
+2. **Señal de seguimiento** (bot de Kommo → app): `POST /api/seguimientos?clave=<KOMMO_WEBHOOK_KEY>&dia=3` (o `7`). El lead
+   puede ir en `?lead=`, en un JSON `{ "lead_id": … }` o en el formulario de Kommo (`leads[status][0][id]`). Responde
+   202 y sigue en segundo plano.
+3. La IA (OpenAI, el modelo de `/api/admin/ia`) lee la conversación y escribe el mensaje. Se guarda en el campo
+   "[V] Mensaje Seguimiento" (`KOMMO_CAMPO_SEGUIMIENTO`, 463316) y se lanza el Salesbot `KOMMO_BOT_SEGUIMIENTO` (10394), que lo envía.
+
+Una fila por lead y día en `seguimientos`: una señal repetida el mismo día no envía dos veces. Si algo falla queda
+`pendiente` con su `error` y se reintenta con la siguiente señal o en el repaso de cada 5 min (48 h); el mensaje ya
+generado se reutiliza, así que OpenAI no se paga dos veces. A los 5 intentos pasa a `fallido` y se deja una nota en el lead.
+Si el cliente ya respondió, decide el bot de Kommo (el servidor envía siempre que llega la señal).
+
+Depurar: `GET /api/seguimientos/<lead>` (con `X-Widget-Key`) muestra el chat guardado y los seguimientos del lead. Los
+logs llevan los prefijos `[mensajes]` y `[seguimientos]`. Sin `KOMMO_WEBHOOK_KEY` los dos webhooks responden 503.
+
 ### Video del cliente (Dropbox)
 
 Cada orden tiene en Dropbox una carpeta con el **número de la orden pagada de Shopify** (`1146/`). Cuando el video

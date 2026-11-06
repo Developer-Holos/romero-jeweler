@@ -135,3 +135,34 @@ export function validar(p: PedidoRedaccion, r: Respuesta): Redaccion {
 		descartadas,
 	};
 }
+
+// ─── Seguimientos (src/lib/server/widget/seguimientos.ts) ───────────────────
+const INSTRUCCIONES_SEGUIMIENTO = `Eres asesor de Romero Jeweler, una joyería de piezas a la medida en Miami.
+Recibes en JSON la conversación de WhatsApp con un cliente ("mensajes", del más antiguo al más reciente; "quien" es "cliente" o "asesor") y el día del seguimiento ("dia": 3 o 7 días desde que quedó en seguimiento).
+Escribe UN solo mensaje de seguimiento para enviarle por WhatsApp.
+
+- Corto (2 a 4 frases), cálido y natural, sin presionar y sin sonar a plantilla.
+- En el idioma en que escribe el cliente.
+- Retoma lo último que se habló: la pieza o la duda pendiente. No repitas lo que el asesor ya dijo.
+- Nunca inventes precios, plazos, descuentos ni datos que no estén en la conversación.
+- Día 3: recordatorio amable y pregunta si tiene dudas o quiere avanzar.
+- Día 7: último seguimiento; ofrece ayuda o una llamada y deja la puerta abierta.
+- Sin conversación: un seguimiento breve y genérico preguntando si sigue interesado.
+- Sin firma, sin asunto y sin más de un emoji.`;
+
+const ESQUEMA_SEGUIMIENTO = { type: "object", additionalProperties: false, required: ["mensaje"], properties: { mensaje: { type: "string" } } } as const;
+
+// `mensajes`: la conversación guardada; solo van los últimos 60 para no gastar de más.
+export async function redactarSeguimiento(mensajes: { fecha: number; cliente: boolean; texto: string }[], dia: number | null, modelo: string, apiKey: string): Promise<string> {
+	cliente ??= new OpenAI({ apiKey });
+	const conversacion = mensajes.slice(-60).map((m) => ({ fecha: new Date(m.fecha * 1000).toISOString().slice(0, 10), quien: m.cliente ? "cliente" : "asesor", texto: m.texto }));
+	const res = await cliente.responses.create({
+		model: modelo,
+		instructions: INSTRUCCIONES_SEGUIMIENTO,
+		input: JSON.stringify({ dia, mensajes: conversacion }),
+		text: { format: { type: "json_schema", name: "seguimiento", strict: true, schema: ESQUEMA_SEGUIMIENTO } },
+	});
+	const mensaje = (JSON.parse(res.output_text) as { mensaje?: string }).mensaje?.trim();
+	if (!mensaje) throw new Error("La IA devolvió un mensaje vacío");
+	return mensaje;
+}

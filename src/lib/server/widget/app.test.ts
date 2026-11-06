@@ -23,6 +23,7 @@ const kommo = {
 	adjuntos: new Map<number, string[]>(),
 	notas: [] as { entity_id: number; params: { text: string } }[],
 	bots: [] as { bot_id: number; entity_id: number }[],
+	fallarBot: 0, // cuántos lanzamientos de bot responden 500 antes de funcionar
 	grupos: [] as { id: string; name: string }[],
 	campos: [{ id: 777, name: "Invoice", type: "file", group_id: null as string | null, sort: 1 }],
 };
@@ -34,6 +35,8 @@ const subirADropbox = (ruta: string) => {
 	dropbox.cambios.push(a);
 };
 const borrarDeDropbox = (ruta: string) => dropbox.cambios.push({ ".tag": "deleted", name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta });
+// OpenAI falso: guarda lo que recibe y, si `fallar` > 0, responde 400 esa cantidad de veces (400: el SDK no reintenta).
+const openai = { pedidos: [] as { instructions: string; input: string }[], fallar: 0 };
 const padre = (ruta: string) => ruta.toLowerCase().split("/").slice(0, -1).join("/");
 
 const falso = createServer(async (req, res) => {
@@ -71,6 +74,14 @@ const falso = createServer(async (req, res) => {
 				return json({ links: dropbox.links.has(cuerpo.path) ? [{ url: dropbox.links.get(cuerpo.path) }] : [] });
 		}
 		return json({ error_summary: "not_found" }, 404);
+	}
+	if (url.pathname === "/v1/responses") {
+		const cuerpo = JSON.parse((await leer(req)).toString());
+		openai.pedidos.push(cuerpo);
+		if (openai.fallar > 0) return openai.fallar--, json({ error: { message: "sin cuota" } }, 400);
+		const input = JSON.parse(cuerpo.input);
+		const salida = input.textos ? { textos: input.textos } : { mensaje: "Hola, ¿sigue interesado en el anillo?" };
+		return json({ id: "r1", object: "response", status: "completed", output: [{ type: "message", id: "m1", role: "assistant", status: "completed", content: [{ type: "output_text", text: JSON.stringify(salida), annotations: [] }] }] });
 	}
 	if (req.headers.authorization !== "Bearer token-kommo") return json({ title: "Unauthorized" }, 401);
 	if (url.pathname === "/api/v4/account") return json({ drive_url: `${base}/drive` });
@@ -141,6 +152,7 @@ const falso = createServer(async (req, res) => {
 		return json({});
 	}
 	if (url.pathname === "/api/v2/salesbot/run" && req.method === "POST") {
+		if (kommo.fallarBot > 0) return kommo.fallarBot--, json({ error: "caído" }, 500);
 		kommo.bots.push(...JSON.parse((await leer(req)).toString()));
 		return json({ success: true });
 	}
@@ -161,7 +173,9 @@ before(async () => {
 			HOST: "127.0.0.1",
 			DATA_DIR: datos,
 			DATABASE_URL: "",
-			OPENAI_API_KEY: "",
+			OPENAI_API_KEY: "clave-openai",
+			OPENAI_BASE_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}/v1`,
+			KOMMO_WEBHOOK_KEY: "clave-kommo",
 			ORIGENES: "https://romerojeweler.kommo.com",
 			WIDGET_KEY: "clave-widget",
 			ADMIN_KEY: "clave-admin",
@@ -333,7 +347,7 @@ describe("opciones compartidas", () => {
 		assert.equal((await agregar("cualquiera", "x")).status, 400);
 	});
 
-	it("sin IA, la traducción devuelve los textos tal cual", async () => {
+	it("la traducción devuelve los textos cuando la IA no cambia nada", async () => {
 		const res = await app.request("/ia/traducir", { method: "POST", headers: W, body: JSON.stringify({ idioma: "es", textos: ["Width", "2 mm"] }) });
 		assert.deepEqual((await res.json()).textos, ["Width", "2 mm"]);
 	});
@@ -470,5 +484,125 @@ describe("video del cliente (Dropbox)", () => {
 		borrarDeDropbox("/Ordenes/1146");
 		await webhook();
 		await esperar(() => kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes("La carpeta de la orden 1146 se borró o se movió")));
+	});
+});
+
+describe("seguimientos con IA", () => {
+	const K = "?clave=clave-kommo";
+	const formulario = { "Content-Type": "application/x-www-form-urlencoded" };
+	// Como los manda Kommo: formulario, sin Origin.
+	const mensaje = (id: string, lead: number, texto: string, tipo = "incoming", fecha = 1762400000) =>
+		new URLSearchParams({ "message[add][0][id]": id, "message[add][0][entity_id]": String(lead), "message[add][0][entity_type]": "lead", "message[add][0][type]": tipo, "message[add][0][text]": texto, "message[add][0][created_at]": String(fecha) }).toString();
+	const enviar = (cuerpo: string, clave = K) => app.request(`/kommo/mensajes${clave}`, { method: "POST", headers: formulario, body: cuerpo });
+	const senal = (lead: number, dia = 3) => app.request(`/seguimientos${K}&dia=${dia}&lead=${lead}`, { method: "POST" });
+	const estado = async (lead: number) => (await (await app.request(`/seguimientos/${lead}`, { headers: W })).json()) as { chat: { mensajes: number; bytes: number; ultimos: { texto: string; cliente: boolean }[] }; seguimientos: { estado: string; intentos: number; error: string | null }[] };
+	const esperar = async (listo: () => boolean) => {
+		for (let i = 0; i < 80 && !listo(); i++) await new Promise((ok) => setTimeout(ok, 50));
+		assert.ok(listo(), "no llegó a tiempo");
+	};
+	const mensajesDeBot = (lead: number) => kommo.bots.filter((b) => b.bot_id === 10394 && b.entity_id === lead);
+	const textoDelCampo = (lead: number) => kommo.lead.get(lead)?.find((v) => v.field_id === 463316)?.values[0].value as unknown as string;
+
+	it("pide la clave de Kommo en la URL, sin pasar por la del widget", async () => {
+		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "?clave=mala")).status, 401);
+		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "")).status, 401);
+		assert.equal((await app.request(`/seguimientos?clave=mala&lead=8001`, { method: "POST" })).status, 401);
+		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar sí pide la clave del widget
+	});
+
+	it("guarda los mensajes de los dos lados una sola vez y comprimidos", async () => {
+		assert.equal((await enviar(mensaje("m1", 8001, "Hola, me interesa un anillo de compromiso en oro rosa", "incoming", 1762400000))).status, 200);
+		await enviar(mensaje("m2", 8001, "Claro, ¿qué talla usa?", "outgoing", 1762400060));
+		await enviar(mensaje("m1", 8001, "Hola, me interesa un anillo de compromiso en oro rosa", "incoming", 1762400000)); // Kommo reintenta
+		await enviar(mensaje("m3", 8002, "Otro cliente"));
+		const e = await estado(8001);
+		assert.deepEqual(e.chat.ultimos.map((m) => [m.cliente, m.texto]), [[true, "Hola, me interesa un anillo de compromiso en oro rosa"], [false, "Claro, ¿qué talla usa?"]]);
+		assert.equal((await estado(8002)).chat.mensajes, 1);
+	});
+
+	it("comprime la conversación: 200 mensajes repetitivos pesan una fracción del texto", async () => {
+		const cuerpo = new URLSearchParams();
+		for (let i = 0; i < 100; i++) {
+			cuerpo.set(`message[add][${i}][id]`, `g${i}`);
+			cuerpo.set(`message[add][${i}][entity_id]`, "8003");
+			cuerpo.set(`message[add][${i}][entity_type]`, "lead");
+			cuerpo.set(`message[add][${i}][type]`, i % 2 ? "outgoing" : "incoming");
+			cuerpo.set(`message[add][${i}][text]`, `Mensaje número ${i}: quiero saber el precio del anillo de oro con diamante`);
+			cuerpo.set(`message[add][${i}][created_at]`, String(1762400000 + i));
+		}
+		await enviar(cuerpo.toString());
+		const e = await estado(8003);
+		assert.equal(e.chat.mensajes, 100);
+		assert.ok(e.chat.bytes < 1200, `pesa ${e.chat.bytes} bytes`);
+	});
+
+	it("la señal genera el mensaje con la conversación, lo guarda en el campo y lanza el bot una sola vez", async () => {
+		const antes = openai.pedidos.length;
+		const res = await senal(8001, 3);
+		assert.equal(res.status, 202);
+		await esperar(() => mensajesDeBot(8001).length === 1);
+		assert.equal(textoDelCampo(8001), "Hola, ¿sigue interesado en el anillo?");
+		const pedido = openai.pedidos[antes];
+		assert.ok(pedido.input.includes("oro rosa") && pedido.input.includes('"dia":3'));
+		assert.equal((await estado(8001)).seguimientos[0].estado, "enviado");
+
+		// La misma señal el mismo día no manda nada más.
+		const otra = await (await senal(8001, 3)).json();
+		assert.equal(otra.estado, "enviado");
+		await new Promise((ok) => setTimeout(ok, 300));
+		assert.equal(mensajesDeBot(8001).length, 1);
+		assert.equal(openai.pedidos.length, antes + 1);
+	});
+
+	it("la señal se entiende también como JSON y como formulario de Kommo", async () => {
+		const json = await app.request(`/seguimientos${K}&dia=7`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lead_id: 8004 }) });
+		assert.equal(json.status, 202);
+		const form = await app.request(`/seguimientos${K}&dia=3`, { method: "POST", headers: formulario, body: "leads[status][0][id]=8005&leads[status][0][status_id]=1" });
+		assert.equal(form.status, 202);
+		await esperar(() => mensajesDeBot(8004).length === 1 && mensajesDeBot(8005).length === 1);
+		assert.equal((await app.request(`/seguimientos${K}`, { method: "POST" })).status, 400);
+	});
+
+	it("si OpenAI falla queda pendiente y la siguiente señal lo reintenta", async () => {
+		openai.fallar = 1;
+		await senal(8006);
+		let e = await estado(8006);
+		for (let i = 0; i < 80 && !e.seguimientos[0]?.error; i++) (await new Promise((ok) => setTimeout(ok, 50)), (e = await estado(8006)));
+		assert.equal(e.seguimientos[0].estado, "pendiente");
+		assert.ok(e.seguimientos[0].error?.includes("400"));
+		assert.equal(mensajesDeBot(8006).length, 0);
+
+		await senal(8006);
+		await esperar(() => mensajesDeBot(8006).length === 1);
+		assert.equal((await estado(8006)).seguimientos[0].intentos, 2);
+	});
+
+	it("si Kommo falla después de generar, el reintento no vuelve a gastar OpenAI", async () => {
+		// El bot falla una vez (500 de Kommo) después de que OpenAI ya escribió el mensaje.
+		kommo.fallarBot = 1;
+		const antes = openai.pedidos.length;
+		await senal(8007);
+		await esperar(() => kommo.fallarBot === 0);
+		await new Promise((ok) => setTimeout(ok, 300));
+		assert.equal(mensajesDeBot(8007).length, 0);
+		await senal(8007);
+		await esperar(() => mensajesDeBot(8007).length === 1);
+		assert.equal(openai.pedidos.length, antes + 1);
+	});
+
+	it("a los 5 intentos fallidos se rinde y deja una nota en el lead", async () => {
+		openai.fallar = 99;
+		for (let i = 1; i <= 5; i++) {
+			await senal(8008);
+			let e = await estado(8008);
+			for (let j = 0; j < 80 && e.seguimientos[0]?.intentos !== i; j++) (await new Promise((ok) => setTimeout(ok, 50)), (e = await estado(8008)));
+			for (let j = 0; j < 80 && !e.seguimientos[0].error; j++) (await new Promise((ok) => setTimeout(ok, 50)), (e = await estado(8008)));
+			await new Promise((ok) => setTimeout(ok, 100));
+		}
+		openai.fallar = 0;
+		const e = await estado(8008);
+		assert.equal(e.seguimientos[0].estado, "fallido");
+		await esperar(() => kommo.notas.some((n) => n.entity_id === 8008 && n.params.text.includes("No se pudo enviar el seguimiento")));
+		assert.equal(mensajesDeBot(8008).length, 0);
 	});
 });
