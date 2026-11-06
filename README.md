@@ -164,9 +164,14 @@ Cada orden tiene en Dropbox una carpeta con el **número de la orden pagada de S
 está terminado se llama `1146_completo.mp4` (también `.mov`, `.m4v`, `.avi`, `.mkv`). Dropbox avisa al webhook; la
 app busca el lead cuyo **Order #** es `1146` (o `#1146`) y:
 
-1. crea un link compartido de Dropbox y lo guarda en **Video (link)**;
+1. crea un link compartido de Dropbox a la **carpeta de la orden** (no al archivo: a veces hay varios formatos, `.mp4`
+   y `.mov`) y lo guarda en **Video (link)**;
 2. deja una nota en el lead con el link;
 3. lanza el Salesbot `KOMMO_BOT_VIDEO`, que manda el link por WhatsApp y marca **Video enviado**.
+
+Se avisa con el primer `_completo` que aparece; los formatos que se suban después ya están en la carpeta compartida.
+**Ojo:** el cliente ve todo lo que haya en esa carpeta (invoice, orden de producción, borradores). Para evitarlo, los
+videos tendrían que vivir en una subcarpeta aparte.
 
 Cada orden se avisa una sola vez (tabla `videos`), aunque haya varias réplicas. Si hay dos leads con el mismo Order #,
 no se envía nada y queda una nota en los dos. Lógica: `src/lib/server/widget/dropbox.ts` y `videos.ts`.
@@ -197,7 +202,7 @@ Un video sin lead (Order # vacío) o con un error queda pendiente y se reintenta
 | N° de Anillos | Numérico | 283974 | El widget guarda cuántas piezas tiene el invoice; Group Fields muestra esos grupos |
 | `*Anillo °N*` … `[N] …` … `*!` | — | — | Un grupo por anillo en la pestaña Orden; el widget crea los que falten |
 | Order # | Texto | — | Número de la orden pagada de Shopify; con él la app encuentra el lead del video |
-| Video (link) · Video enviado | URL · Casilla | — | La app guarda el link de Dropbox; el Salesbot marca la casilla al enviarlo |
+| Video (link) · Video enviado | URL · Casilla | — | Se crean **a mano** en Kommo con esos nombres exactos. La app guarda el link de la carpeta en Dropbox; el Salesbot marca la casilla al enviarlo |
 
 El widget busca los campos de la pestaña Orden por nombre, así que los ids pueden cambiar.
 

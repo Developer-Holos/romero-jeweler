@@ -37,17 +37,22 @@ const ESQUEMA = `
 		actualizado timestamptz not null default now()
 	);
 	create index if not exists invoices_lead on invoices (lead_id);
-	-- Video de cada orden en Dropbox: avisado evita volver a mandarlo; path sin avisado es un aviso pendiente.
+	-- Video de cada orden en Dropbox: avisado evita volver a mandarlo; carpeta (la de la orden) sin avisado es un aviso pendiente.
 	create table if not exists videos (
 		orden text primary key,
 		lead_id bigint,
-		path text,
+		carpeta text,
 		link text,
 		avisado timestamptz,
 		leads_notados text,
 		creado timestamptz not null default now(),
 		actualizado timestamptz not null default now()
 	);
+	do $$ begin
+		if exists (select 1 from information_schema.columns where table_name = 'videos' and column_name = 'path') then
+			alter table videos rename column path to carpeta;
+		end if;
+	end $$;
 	alter table videos add column if not exists leads_notados text;
 	alter table videos add column if not exists creado timestamptz not null default now();
 `;

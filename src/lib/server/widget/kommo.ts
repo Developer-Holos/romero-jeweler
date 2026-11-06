@@ -173,7 +173,7 @@ export async function descargarArchivo(uuid: string) {
 }
 
 // ─── Video del cliente (src/lib/server/widget/videos.ts) ────────────────────
-// Los campos "Order #" y "Video (link)" de la pestaña "Orden" los crea el widget; la app los busca por nombre.
+// Los campos "Order #" (lo crea el widget) y "Video (link)" (se crea a mano en la pestaña "Orden") se buscan por nombre.
 export const CAMPO_ORDEN = "Order #";
 export const CAMPO_VIDEO = "Video (link)";
 

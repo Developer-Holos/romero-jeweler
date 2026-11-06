@@ -355,13 +355,14 @@ describe("video del cliente (Dropbox)", () => {
 	const aviso = '{"list_folder":{"accounts":["dbid:1"]}}';
 	// Dropbox manda JSON. Con text/plain, SvelteKit lo cortaría antes (CSRF: "Cross-site POST form submissions").
 	const webhook = (firma = firmar(aviso)) => app.request("/videos/webhook", { method: "POST", headers: { "Content-Type": "application/json", "X-Dropbox-Signature": firma }, body: aviso });
+	const pausa = (ms = 400) => new Promise((ok) => setTimeout(ok, ms));
 	const esperar = async (listo: () => boolean) => {
 		for (let i = 0; i < 60 && !listo(); i++) await new Promise((ok) => setTimeout(ok, 50));
 		assert.ok(listo(), "no llegó a tiempo");
 	};
 
 	before(() => {
-		// Lo que el widget dejó creado en la pestaña Orden, y el lead con su Order #.
+		// Los campos de la pestaña Orden (Video (link) se crea a mano) y el lead con su Order #.
 		kommo.campos.push({ id: 801, name: "Order #", type: "text", group_id: null, sort: 10 }, { id: 802, name: "Video (link)", type: "url", group_id: null, sort: 16 });
 		kommo.lead.set(7001, [{ field_id: 801, values: [{ value: "1146" as never }] }]);
 	});
@@ -382,14 +383,35 @@ describe("video del cliente (Dropbox)", () => {
 		await esperar(() => kommo.bots.length === 1);
 		assert.deepEqual(kommo.bots[0], { bot_id: 4242, entity_type: 2, entity_id: 7001 });
 		const link = kommo.lead.get(7001)?.find((v) => v.field_id === 802)?.values[0].value as unknown as string;
-		assert.equal(link, "https://www.dropbox.com/s/falso/1146_completo.mp4");
+		assert.equal(link, "https://www.dropbox.com/s/falso/1146"); // el link es el de la carpeta, no el del archivo
 		assert.ok(kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes(link)));
 
 		// El mismo archivo vuelve a cambiar (o el aviso llega dos veces): no se manda de nuevo.
 		subirADropbox("/Ordenes/1146/1146_completo.mp4");
 		await webhook();
-		await new Promise((ok) => setTimeout(ok, 400));
+		await pausa();
 		assert.equal(kommo.bots.length, 1);
+	});
+
+	it("otro formato del mismo video no se vuelve a enviar y queda en la carpeta compartida", async () => {
+		const enviados = kommo.bots.length;
+		subirADropbox("/Ordenes/1146/1146_completo.mov");
+		await webhook();
+		await pausa();
+		assert.equal(kommo.bots.length, enviados);
+		const estado = await (await app.request("/videos/1146", { headers: W })).json();
+		assert.deepEqual(estado.videos.map((v: { nombre: string }) => v.nombre).sort(), ["1146_completo.mov", "1146_completo.mp4"]);
+
+		// Borrar el video que se envió no rompe el link de la carpeta: sin nota. (Se vuelve a subir para los demás tests.)
+		const notas = kommo.notas.length;
+		borrarDeDropbox("/Ordenes/1146/1146_completo.mp4");
+		await webhook();
+		await pausa();
+		assert.equal(kommo.notas.length, notas);
+		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		await webhook();
+		await pausa();
+		assert.equal(kommo.bots.length, enviados);
 	});
 
 	it("GET dice cómo está el video sin tocar nada", async () => {
@@ -397,7 +419,7 @@ describe("video del cliente (Dropbox)", () => {
 		const estado = await (await app.request("/videos/1146", { headers: W })).json();
 		assert.equal(estado.completo, true);
 		assert.equal(estado.carpeta, "/Ordenes/1146");
-		assert.equal(estado.video.nombre, "1146_completo.mp4");
+		assert.ok(estado.videos.some((v: { nombre: string }) => v.nombre === "1146_completo.mp4"));
 		assert.equal(estado.lead, 7001);
 		assert.ok(estado.avisado);
 		assert.equal(kommo.notas.length, notas);
@@ -419,14 +441,14 @@ describe("video del cliente (Dropbox)", () => {
 		const notas = kommo.notas.length;
 		await app.request("/videos/1147", { method: "POST", headers: W });
 		await webhook();
-		await new Promise((ok) => setTimeout(ok, 400));
+		await pausa();
 		assert.equal(kommo.notas.length, notas);
 	});
 
 	it("un video sin lead queda pendiente y se envía cuando aparece el Order #", async () => {
 		subirADropbox("/Ordenes/1148/1148_completo.mp4");
 		await webhook();
-		await new Promise((ok) => setTimeout(ok, 400));
+		await pausa();
 		assert.equal((await (await app.request("/videos/1148", { headers: W })).json()).pendiente, true);
 		assert.equal(kommo.bots.length, 1);
 
@@ -440,13 +462,13 @@ describe("video del cliente (Dropbox)", () => {
 		subirADropbox("/Ordenes/viejas/1149/1149_completo.mp4");
 		subirADropbox("/Otra/1149/1149_completo.mp4");
 		await webhook();
-		await new Promise((ok) => setTimeout(ok, 400));
+		await pausa();
 		assert.ok(!kommo.bots.some((b) => b.entity_id === 7005));
 	});
 
-	it("si se borra un video ya enviado, deja una nota en el lead", async () => {
+	it("si se borra la carpeta de una orden ya enviada, deja una nota en el lead", async () => {
 		borrarDeDropbox("/Ordenes/1146");
 		await webhook();
-		await esperar(() => kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes("se borró o se movió")));
+		await esperar(() => kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes("La carpeta de la orden 1146 se borró o se movió")));
 	});
 });

@@ -132,14 +132,17 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
 - **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
   orden es el **número de la orden pagada** y se compara con el campo "Order #" del lead (`#1146` = `1146`). Una orden se
   avisa una sola vez, también con varias réplicas: `avisado` se marca con un upsert atómico **antes** de lanzar el bot
-  (`reclamar` en `videos.ts`) y se desmarca si el bot falla; para reenviar, borrar su fila. Una fila con `path` y sin
-  `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada (webhook o repaso
-  cada 10 min, 30 días): por eso el cursor puede avanzar aunque una orden falle. El cursor se toma en el `init` de
-  `hooks.server.ts`, no con el primer webhook (si no, ese video se pierde). Con `DROPBOX_RAIZ` solo cuenta
-  `<raiz>/<orden>/…`, igual en el webhook y en `GET/POST /api/videos/:orden` (`comoVideo`). El link se pide público y
-  falla si el equipo no lo permite. El webhook tiene que recibir JSON: con `text/plain` SvelteKit lo corta por CSRF.
-  `search_v2` tarda en indexar: con `DROPBOX_RAIZ` se va directo a la carpeta.
-  Los campos "Video (link)" y "Video enviado" los crea el widget (`CAMPOS_PEDIDO`, `soloKommo`: no pasan al borrador).
+  (`reclamar` en `videos.ts`) y se desmarca si el bot falla; para reenviar, borrar su fila. Una fila con `carpeta` (la de
+  la orden) y sin `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada
+  (webhook o repaso cada 10 min, 30 días) usando la carpeta guardada, sin buscarla por nombre: por eso el cursor puede
+  avanzar aunque una orden falle. El cursor se toma en el `init` de `hooks.server.ts`, no con el primer webhook (si no,
+  ese video se pierde). Con `DROPBOX_RAIZ` solo cuenta `<raiz>/<orden>/…`, igual en el webhook y en
+  `GET/POST /api/videos/:orden` (`comoVideo`).
+  En "Video (link)" va el link de la **carpeta** de la orden, no el del archivo (a veces hay varios formatos); se avisa
+  con el primer `_completo`. Se pide público y falla si el equipo no lo permite. El cliente ve todo lo de esa carpeta.
+  El webhook tiene que recibir JSON: con `text/plain` SvelteKit lo corta por CSRF. `search_v2` tarda en indexar: con
+  `DROPBOX_RAIZ` se va directo a la carpeta. "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
+  crea); la API busca el primero por nombre, el segundo lo marca el Salesbot.
 - **API de Kommo Drive y campo archivo** (`src/lib/server/widget/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
   el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
   nunca uno de un cliente.

@@ -23,16 +23,17 @@ export const GET: RequestHandler = ({ params }) =>
 	conErrores(async () => {
 		if (!ordenValida(params.orden)) return fallo("Orden inválida", 400);
 		if (!dropboxConfigurado()) return fallo("Dropbox no está configurado", 503);
-		const [{ carpeta, video }, registro] = await Promise.all([videoDeOrden(params.orden), registroVideo(await db(), params.orden)]);
+		const registro = await registroVideo(await db(), params.orden);
+		const { carpeta, videos } = await videoDeOrden(params.orden, registro?.carpeta);
 		return json({
 			orden: params.orden,
 			carpeta,
-			completo: !!video,
-			video: video && { nombre: video.name, path: video.path_display, tamano: video.size, modificado: video.server_modified },
+			completo: videos.length > 0,
+			videos: videos.map((v) => ({ nombre: v.name, tamano: v.size, modificado: v.server_modified })),
 			lead: registro?.lead_id ? Number(registro.lead_id) : null,
 			link: registro?.link ?? null,
 			avisado: registro?.avisado ?? null,
-			pendiente: !!registro?.path && !registro.avisado,
+			pendiente: !!registro?.carpeta && !registro.avisado,
 		});
 	});
 

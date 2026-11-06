@@ -7,7 +7,7 @@
 //   POST /2/files/get_metadata · /2/files/list_folder     → confirmar que algo existe (search tiene retraso de índice)
 //   POST /2/files/search_v2 (filename_only)               → buscar la carpeta cuando no se conoce la raíz
 //   POST /2/files/list_folder/get_latest_cursor · /continue → solo lo que cambió (lo avisa el webhook)
-//   POST /2/sharing/create_shared_link_with_settings      → link permanente para el cliente (get_temporary_link vence a las 4 h)
+//   POST /2/sharing/create_shared_link_with_settings      → link permanente a la carpeta de la orden (get_temporary_link vence a las 4 h)
 //   POST /2/sharing/list_shared_links · modify_shared_link_settings → el link que ya existía, abierto al público
 import { createHmac, timingSafeEqual } from "node:crypto";
 
@@ -131,17 +131,34 @@ export async function carpetaDeOrden(orden: string): Promise<string | null> {
 
 const listo = (a: ArchivoDropbox) => a.size > 0 && a.is_downloadable !== false;
 
-export async function videoDeOrden(orden: string): Promise<{ carpeta: string | null; video: ArchivoDropbox | null }> {
-	const carpeta = await carpetaDeOrden(orden);
-	if (!carpeta) return { carpeta: null, video: null };
-	let r = await llamar<{ entries: Entrada[]; cursor: string; has_more: boolean }>("files/list_folder", { path: carpeta });
-	const archivos = [...r.entries];
-	while (r.has_more) {
-		r = await llamar("files/list_folder/continue", { cursor: r.cursor });
-		archivos.push(...r.entries);
+// Lo que hay en una carpeta, o null si ya no existe.
+async function archivosDe(carpeta: string): Promise<Entrada[] | null> {
+	try {
+		let r = await llamar<{ entries: Entrada[]; cursor: string; has_more: boolean }>("files/list_folder", { path: carpeta });
+		const archivos = [...r.entries];
+		while (r.has_more) {
+			r = await llamar("files/list_folder/continue", { cursor: r.cursor });
+			archivos.push(...r.entries);
+		}
+		return archivos;
+	} catch (e) {
+		if (noExiste(e)) return null;
+		throw e;
 	}
-	const video = archivos.find((e): e is ArchivoDropbox => e[".tag"] === "file" && esVideoCompleto(e.name, orden) && listo(e)) ?? null;
-	return { carpeta, video };
+}
+
+// Todos los formatos que ya están (mp4, mov…) de la orden; el primero es el que dispara el aviso. `guardada` es la
+// carpeta con la que ya se avisó o quedó pendiente: se usa tal cual: buscar por nombre podría elegir otra si hay
+// dos carpetas iguales, o no encontrarla aún por el retraso del índice. Solo si ya no existe se vuelve a buscar.
+export async function videoDeOrden(orden: string, guardada?: string | null): Promise<{ carpeta: string | null; videos: ArchivoDropbox[] }> {
+	let carpeta = guardada || (await carpetaDeOrden(orden));
+	let archivos = carpeta ? await archivosDe(carpeta) : null;
+	if (!archivos && guardada) {
+		carpeta = await carpetaDeOrden(orden);
+		archivos = carpeta ? await archivosDe(carpeta) : null;
+	}
+	if (!carpeta || !archivos) return { carpeta: null, videos: [] };
+	return { carpeta, videos: archivos.filter((e): e is ArchivoDropbox => e[".tag"] === "file" && esVideoCompleto(e.name, orden) && listo(e)) };
 }
 
 // ─── Cambios (webhook) ──────────────────────────────────────────────────────
@@ -150,22 +167,14 @@ export async function videoDeOrden(orden: string): Promise<{ carpeta: string | n
 // carpetaDeOrden); sin ella, a cualquier profundidad.
 export function comoVideo(e: Entrada): { orden: string; archivo: ArchivoDropbox } | null {
 	if (e[".tag"] !== "file") return null;
-	const partes = e.path_display.split("/");
-	const orden = partes.at(-2) ?? "";
-	if (config.raiz && partes.slice(0, -2).join("/").toLowerCase() !== config.raiz.toLowerCase()) return null;
+	const carpeta = carpetaDe(e);
+	const orden = carpeta.split("/").at(-1) ?? "";
+	if (config.raiz && carpeta.slice(0, -orden.length - 1).toLowerCase() !== config.raiz.toLowerCase()) return null;
 	return esVideoCompleto(e.name, orden) && listo(e) ? { orden, archivo: e } : null;
 }
 
-// El archivo en `path`, si sigue ahí y sigue siendo el video de su orden (para reintentar un aviso pendiente).
-export async function archivoEn(path: string) {
-	try {
-		const e = await llamar<Entrada>("files/get_metadata", { path });
-		return comoVideo(e)?.archivo ?? null;
-	} catch (e) {
-		if (noExiste(e)) return null;
-		throw e;
-	}
-}
+// La carpeta de la orden, que es lo que se comparte con el cliente (puede haber varios formatos del video).
+export const carpetaDe = (archivo: ArchivoDropbox) => archivo.path_display.split("/").slice(0, -1).join("/");
 
 // El webhook no trae los cambios: hay que pedirlos con el cursor guardado.
 export async function cursorInicial() {
