@@ -8,7 +8,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
 	BODY_SIZE_LIMIT=25M
 
 WORKDIR /app
-RUN corepack enable && corepack prepare pnpm@12.14.0 --activate
+# La imagen de Playwright ya no trae corepack (Node 26): pnpm se instala con npm.
+RUN npm install -g pnpm@12.14.0
 
 # Primero solo los manifiestos, para que la instalación quede en caché entre despliegues.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
