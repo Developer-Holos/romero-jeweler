@@ -16,10 +16,11 @@ const leer = async (req: IncomingMessage) => {
 };
 
 // Kommo falso: guarda lo que se le sube para poder revisarlo.
-type ValorCampo = { field_id: number; values: { value: Record<string, unknown> }[] };
+type ValorCampo = { field_id: number; field_name?: string; field_type?: string; values: { value: Record<string, unknown> }[] };
 const kommo = {
 	archivos: new Map<string, { nombre: string; tipo: string; datos: Buffer }>(),
 	lead: new Map<number, ValorCampo[]>(), // valores de campos por lead (cada PATCH los va sumando)
+	precios: new Map<number, number>(), // precio de cada lead
 	adjuntos: new Map<number, string[]>(),
 	notas: [] as { entity_id: number; params: { text: string } }[],
 	bots: [] as { bot_id: number; entity_id: number }[],
@@ -123,7 +124,7 @@ const falso = createServer(async (req, res) => {
 		return json({ _embedded: { custom_fields: nuevos } });
 	}
 	const lead = url.pathname.match(/^\/api\/v4\/leads\/(\d+)(\/files)?$/);
-	if (lead && !lead[2] && req.method === "GET") return json({ id: +lead[1], custom_fields_values: kommo.lead.get(+lead[1]) ?? null });
+	if (lead && !lead[2] && req.method === "GET") return json({ id: +lead[1], price: kommo.precios.get(+lead[1]) ?? 0, custom_fields_values: kommo.lead.get(+lead[1]) ?? null });
 	if (lead && !lead[2] && req.method === "PATCH") {
 		const { custom_fields_values } = JSON.parse((await leer(req)).toString()) as { custom_fields_values: ValorCampo[] };
 		const valores = (kommo.lead.get(+lead[1]) ?? []).filter((v) => !custom_fields_values.some((n) => n.field_id === v.field_id));
@@ -175,7 +176,6 @@ before(async () => {
 			DATABASE_URL: "",
 			OPENAI_API_KEY: "clave-openai",
 			OPENAI_BASE_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}/v1`,
-			KOMMO_WEBHOOK_KEY: "clave-kommo",
 			ORIGENES: "https://romerojeweler.kommo.com",
 			WIDGET_KEY: "clave-widget",
 			ADMIN_KEY: "clave-admin",
@@ -488,27 +488,22 @@ describe("video del cliente (Dropbox)", () => {
 });
 
 describe("seguimientos con IA", () => {
-	const K = "?clave=clave-kommo";
 	const formulario = { "Content-Type": "application/x-www-form-urlencoded" };
 	// Como los manda Kommo: formulario, sin Origin.
 	const mensaje = (id: string, lead: number, texto: string, tipo = "incoming", fecha = 1762400000) =>
 		new URLSearchParams({ "message[add][0][id]": id, "message[add][0][entity_id]": String(lead), "message[add][0][entity_type]": "lead", "message[add][0][type]": tipo, "message[add][0][text]": texto, "message[add][0][created_at]": String(fecha) }).toString();
-	const enviar = (cuerpo: string, clave = K) => app.request(`/kommo/mensajes${clave}`, { method: "POST", headers: formulario, body: cuerpo });
-	const senal = (lead: number, dia = 3) => app.request(`/seguimientos${K}&dia=${dia}&lead=${lead}`, { method: "POST" });
-	const estado = async (lead: number) => (await (await app.request(`/seguimientos/${lead}${K}`)).json()) as { chat: { mensajes: number; bytes: number; ultimos: { texto: string; cliente: boolean }[] }; seguimientos: { estado: string; intentos: number; error: string | null }[] };
+	const enviar = (cuerpo: string) => app.request("/kommo/mensajes", { method: "POST", headers: formulario, body: cuerpo });
+	const senal = (lead: number, dia = 3) => app.request(`/seguimientos?dia=${dia}`, { method: "POST", headers: formulario, body: `leads[status][0][id]=${lead}&leads[status][0][status_id]=113046839` });
+	const estado = async (lead: number) => (await (await app.request(`/seguimientos/${lead}`, { headers: W })).json()) as { chat: { mensajes: number; bytes: number; ultimos: { texto: string; cliente: boolean }[] }; seguimientos: { estado: string; intentos: number; error: string | null }[] };
 	const esperar = async (listo: () => boolean) => {
 		for (let i = 0; i < 80 && !listo(); i++) await new Promise((ok) => setTimeout(ok, 50));
 		assert.ok(listo(), "no llegó a tiempo");
 	};
 	const mensajesDeBot = (lead: number) => kommo.bots.filter((b) => b.bot_id === 10394 && b.entity_id === lead);
 	const textoDelCampo = (lead: number) => kommo.lead.get(lead)?.find((v) => v.field_id === 463316)?.values[0].value as unknown as string;
-
-	it("pide la clave de Kommo en la URL, sin pasar por la del widget", async () => {
-		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "?clave=mala")).status, 401);
-		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "")).status, 401);
-		assert.equal((await app.request(`/seguimientos?clave=mala&lead=8001`, { method: "POST" })).status, 401);
-		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar también pide la clave (hay chats de clientes)
-	});
+	const campo = (id: number, nombre: string, tipo: string, ...valores: string[]): ValorCampo => ({ field_id: id, field_name: nombre, field_type: tipo, values: valores.map((value) => ({ value: value as never })) });
+	// Lo que recibió OpenAI en el pedido de seguimiento número `n` desde `desde`.
+	const entradaIa = (desde: number, n = 0) => JSON.parse(openai.pedidos[desde + n].input) as { dia: number; datos_del_lead: { nombre: string; valor: string }[]; seguimientos_anteriores: { dia: number; mensaje: string }[]; mensajes: { texto: string }[] };
 
 	it("guarda los mensajes de los dos lados una sola vez y comprimidos", async () => {
 		assert.equal((await enviar(mensaje("m1", 8001, "Hola, me interesa un anillo de compromiso en oro rosa", "incoming", 1762400000))).status, 200);
@@ -520,7 +515,7 @@ describe("seguimientos con IA", () => {
 		assert.equal((await estado(8002)).chat.mensajes, 1);
 	});
 
-	it("comprime la conversación: 200 mensajes repetitivos pesan una fracción del texto", async () => {
+	it("comprime la conversación: 100 mensajes repetitivos pesan una fracción del texto", async () => {
 		const cuerpo = new URLSearchParams();
 		for (let i = 0; i < 100; i++) {
 			cuerpo.set(`message[add][${i}][id]`, `g${i}`);
@@ -536,14 +531,26 @@ describe("seguimientos con IA", () => {
 		assert.ok(e.chat.bytes < 1200, `pesa ${e.chat.bytes} bytes`);
 	});
 
-	it("la señal genera el mensaje con la conversación, lo guarda en el campo y lanza el bot una sola vez", async () => {
+	it("la señal pide el día en la URL y el lead en el formulario", async () => {
+		assert.equal((await app.request("/seguimientos", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
+		assert.equal((await app.request("/seguimientos?dia=hoy", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
+		assert.equal((await app.request("/seguimientos?dia=3", { method: "POST", headers: formulario, body: "nada=1" })).status, 400);
+		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar pide la clave del widget
+	});
+
+	it("genera el mensaje con el chat y los campos del lead, lo guarda en el campo y lanza el bot una sola vez", async () => {
+		kommo.precios.set(8001, 4500);
+		kommo.lead.set(8001, [campo(900, "Tipo de anillo", "select", "Solitario"), campo(901, "Plazo espera", "select", "2 meses"), campo(902, "Notas internas", "text", "cliente difícil"), campo(903, "[V] - Mensaje Seguimiento", "textarea", "viejo")]);
 		const antes = openai.pedidos.length;
 		const res = await senal(8001, 3);
 		assert.equal(res.status, 202);
 		await esperar(() => mensajesDeBot(8001).length === 1);
 		assert.equal(textoDelCampo(8001), "Hola, ¿sigue interesado en el anillo?");
-		const pedido = openai.pedidos[antes];
-		assert.ok(pedido.input.includes("oro rosa") && pedido.input.includes('"dia":3'));
+		const entrada = entradaIa(antes);
+		assert.equal(entrada.dia, 3);
+		assert.ok(entrada.mensajes.some((m) => m.texto.includes("oro rosa")));
+		// Presupuesto y campos de la lista; nada de lo que no está en ella.
+		assert.deepEqual(entrada.datos_del_lead, [{ nombre: "Presupuesto", valor: "4500" }, { nombre: "Tipo de anillo", valor: "Solitario" }, { nombre: "Plazo espera", valor: "2 meses" }]);
 		assert.equal((await estado(8001)).seguimientos[0].estado, "enviado");
 
 		// La misma señal el mismo día no manda nada más.
@@ -554,13 +561,12 @@ describe("seguimientos con IA", () => {
 		assert.equal(openai.pedidos.length, antes + 1);
 	});
 
-	it("la señal se entiende también como JSON y como formulario de Kommo", async () => {
-		const json = await app.request(`/seguimientos${K}&dia=7`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lead_id: 8004 }) });
-		assert.equal(json.status, 202);
-		const form = await app.request(`/seguimientos${K}&dia=3`, { method: "POST", headers: formulario, body: "leads[status][0][id]=8005&leads[status][0][status_id]=1" });
-		assert.equal(form.status, 202);
-		await esperar(() => mensajesDeBot(8004).length === 1 && mensajesDeBot(8005).length === 1);
-		assert.equal((await app.request(`/seguimientos${K}`, { method: "POST" })).status, 400);
+	it("el seguimiento del día 7 ve el del día 3 para no repetirlo", async () => {
+		const antes = openai.pedidos.length;
+		await senal(8001, 7);
+		await esperar(() => mensajesDeBot(8001).length === 2);
+		assert.deepEqual(entradaIa(antes).seguimientos_anteriores.map((p) => [p.dia, p.mensaje]), [[3, "Hola, ¿sigue interesado en el anillo?"]]);
+		assert.equal(entradaIa(antes).dia, 7);
 	});
 
 	it("si OpenAI falla queda pendiente y la siguiente señal lo reintenta", async () => {

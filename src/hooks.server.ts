@@ -1,6 +1,6 @@
 // /api es la API del widget de invoice, que la llama desde la cuenta de Kommo (otro origen): CORS y, si
-// WIDGET_KEY está definida, el header X-Widget-Key (menos /api/salud, /api/admin, que tiene su propia clave, y el
-// webhook de Dropbox, que va firmado).
+// WIDGET_KEY está definida, el header X-Widget-Key (menos /api/salud, /api/admin, que tiene su propia clave, el
+// webhook de Dropbox, que va firmado, y los de Kommo —mensajes y señal de seguimiento—, que no pueden mandar el header).
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { dropboxConfigurado } from '#lib/server/widget/dropbox.ts';
 import { db, env, fallo, iguales, seguimientoConfig } from '#lib/server/widget/servicio.ts';
@@ -10,12 +10,10 @@ import { iniciarVideos } from '#lib/server/widget/videos.ts';
 // El cursor de Dropbox se toma al arrancar: si esperara al primer webhook, el video que lo dispara se perdería.
 export const init: ServerInit = async () => {
   // Los seguimientos pendientes se reintentan cada 5 min (no dependen de Dropbox).
-  if (env.KOMMO_WEBHOOK_KEY) {
-    try {
-      iniciarSeguimientos(await db(), seguimientoConfig);
-    } catch (e) {
-      console.error('[seguimientos] no se pudo iniciar:', e);
-    }
+  try {
+    iniciarSeguimientos(await db(), seguimientoConfig);
+  } catch (e) {
+    console.error('[seguimientos] no se pudo iniciar:', e);
   }
   if (!dropboxConfigurado()) return;
   // Si falla (Postgres o Dropbox caídos), la app arranca igual: el cursor se toma con el primer aviso.
@@ -43,7 +41,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   const cors: Record<string, string> = origen && env.ORIGENES.includes(origen) ? { ...CORS, 'Access-Control-Allow-Origin': origen, Vary: 'Origin' } : {};
   if (event.request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
-  const libre = ruta === '/api/salud' || ruta === '/api/videos/webhook' || ruta === '/api/kommo/mensajes' || ruta === '/api/seguimientos' || ruta === '/api/seguimientos/[lead]' || ruta.startsWith('/api/admin/');
+  const libre = ruta === '/api/salud' || ruta === '/api/videos/webhook' || ruta === '/api/kommo/mensajes' || ruta === '/api/seguimientos' || ruta.startsWith('/api/admin/');
   const res = !libre && env.WIDGET_KEY && !iguales(event.request.headers.get('X-Widget-Key'), env.WIDGET_KEY)
     ? fallo('Clave del widget inválida', 401)
     : await resolve(event);

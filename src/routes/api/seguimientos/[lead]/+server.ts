@@ -1,13 +1,10 @@
-// Para depurar un lead: el chat guardado y los seguimientos que tiene. Son conversaciones de clientes: pide la clave de
-// Kommo (?clave=) aunque WIDGET_KEY no esté definida.
+// Para depurar un lead: el chat guardado y los seguimientos que tiene (con X-Widget-Key, como el resto de la API).
 import { json } from "@sveltejs/kit";
 import { leerConversacion } from "#lib/server/widget/mensajes.ts";
-import { db, fallo, leadValido, rechazarWebhookKommo } from "#lib/server/widget/servicio.ts";
+import { db, fallo, leadValido } from "#lib/server/widget/servicio.ts";
 import type { RequestHandler } from "./$types";
 
-export const GET: RequestHandler = async ({ params, url }) => {
-	const rechazo = rechazarWebhookKommo(url);
-	if (rechazo) return rechazo;
+export const GET: RequestHandler = async ({ params }) => {
 	const lead = leadValido(params.lead);
 	if (!lead) return fallo("Lead inválido", 400);
 	const base = await db();

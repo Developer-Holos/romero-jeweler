@@ -1,6 +1,8 @@
 // Redacción con OpenAI: pule las viñetas de la descripción (sumando las notas del asesor) y, si el
 // invoice va en inglés, traduce todo: condiciones y etiquetas del documento. Nunca decide montos.
 import OpenAI from "openai";
+import type { DatoLead } from "./contexto-lead.ts";
+import type { Mensaje } from "./mensajes.ts";
 
 export type PedidoRedaccion = {
 	idioma: "es" | "en";
@@ -137,31 +139,64 @@ export function validar(p: PedidoRedaccion, r: Respuesta): Redaccion {
 }
 
 // ─── Seguimientos (src/lib/server/widget/seguimientos.ts) ───────────────────
-const INSTRUCCIONES_SEGUIMIENTO = `Eres asesor de Romero Jeweler, una joyería de piezas a la medida en Miami.
-Recibes en JSON la conversación de WhatsApp con un cliente ("mensajes", del más antiguo al más reciente; "quien" es "cliente" o "asesor") y el día del seguimiento ("dia": 3 o 7 días desde que quedó en seguimiento).
-Escribe UN solo mensaje de seguimiento para enviarle por WhatsApp.
+export type SeguimientoPrevio = { dia: number; fecha: string; mensaje: string };
 
+// Todo lo que sabe la IA para escribir un seguimiento. Para darle otro dato, se suma aquí y en `entradaSeguimiento`.
+export type ContextoSeguimiento = {
+	dia: number;
+	datos: DatoLead[]; // campos del lead (presupuesto, servicio, tipo de anillo…)
+	mensajes: Mensaje[]; // el chat guardado
+	previos: SeguimientoPrevio[]; // seguimientos automáticos que ya se enviaron a este lead
+};
+
+// Cómo cambia el mensaje según el día. Para otro día, se suma una línea; los que no estén usan el enfoque genérico.
+const ENFOQUE_POR_DIA: Record<number, string> = {
+	3: "Recordatorio amable: pregunta si tiene dudas o quiere avanzar.",
+	7: "Último seguimiento: ofrece ayuda o una llamada y deja la puerta abierta. No repitas lo que ya dijiste en el seguimiento anterior.",
+};
+const ENFOQUE_GENERICO = "Seguimiento amable que retome la conversación sin presionar.";
+
+const INSTRUCCIONES_SEGUIMIENTO = `Eres asesor de Romero Jeweler, una joyería de piezas a la medida en Miami.
+Recibes en JSON lo que se sabe de un cliente y escribes UN solo mensaje de seguimiento para enviarle por WhatsApp.
+
+Lo que recibes:
+- "dia" y "enfoque": los días desde que quedó en seguimiento y cómo debe sonar este mensaje.
+- "datos_del_lead": lo que Romero tiene anotado del cliente (presupuesto, servicio, tipo de anillo, plazo…).
+- "seguimientos_anteriores": los mensajes automáticos que ya se le enviaron, del más antiguo al más reciente.
+- "mensajes": la conversación de WhatsApp, del más antiguo al más reciente ("quien" es "cliente" o "asesor").
+
+Reglas:
 - Corto (2 a 4 frases), cálido y natural, sin presionar y sin sonar a plantilla.
 - En el idioma en que escribe el cliente.
 - Retoma lo último que se habló: la pieza o la duda pendiente. No repitas lo que el asesor ya dijo.
-- Nunca inventes precios, plazos, descuentos ni datos que no estén en la conversación.
-- Día 3: recordatorio amable y pregunta si tiene dudas o quiere avanzar.
-- Día 7: último seguimiento; ofrece ayuda o una llamada y deja la puerta abierta.
-- Sin conversación: un seguimiento breve y genérico preguntando si sigue interesado.
+- Usa los datos del lead solo si ayudan al mensaje (por ejemplo, el tipo de anillo que busca). No los listes como una ficha ni menciones nombres de campos.
+- Nunca inventes precios, plazos, descuentos ni datos que no estén en el lead o en la conversación.
+- No repitas lo dicho en los seguimientos anteriores. Si en ellos o en el chat se ofreció algo, mantén la coherencia y no lo contradigas.
+- Sin datos ni conversación: un seguimiento breve y genérico preguntando si sigue interesado.
 - Sin firma, sin asunto y sin más de un emoji.`;
 
 const ESQUEMA_SEGUIMIENTO = { type: "object", additionalProperties: false, required: ["mensaje"], properties: { mensaje: { type: "string" } } } as const;
 
-// `mensajes`: la conversación guardada; solo van los últimos 60 para no gastar de más.
-export async function redactarSeguimiento(mensajes: { fecha: number; cliente: boolean; texto: string }[], dia: number | null, modelo: string, apiKey: string): Promise<string> {
+// Solo van los últimos 60 mensajes del chat, para no gastar de más.
+const entradaSeguimiento = (c: ContextoSeguimiento) => ({
+	dia: c.dia,
+	enfoque: ENFOQUE_POR_DIA[c.dia] ?? ENFOQUE_GENERICO,
+	datos_del_lead: c.datos,
+	seguimientos_anteriores: c.previos,
+	mensajes: c.mensajes.slice(-60).map((m) => ({ fecha: new Date(m.fecha * 1000).toISOString().slice(0, 10), quien: m.cliente ? "cliente" : "asesor", texto: m.texto })),
+});
+
+export async function redactarSeguimiento(contexto: ContextoSeguimiento, modelo: string, apiKey: string): Promise<string> {
 	cliente ??= new OpenAI({ apiKey });
-	const conversacion = mensajes.slice(-60).map((m) => ({ fecha: new Date(m.fecha * 1000).toISOString().slice(0, 10), quien: m.cliente ? "cliente" : "asesor", texto: m.texto }));
-	const res = await cliente.responses.create({
-		model: modelo,
-		instructions: INSTRUCCIONES_SEGUIMIENTO,
-		input: JSON.stringify({ dia, mensajes: conversacion }),
-		text: { format: { type: "json_schema", name: "seguimiento", strict: true, schema: ESQUEMA_SEGUIMIENTO } },
-	}, { timeout: 60_000, maxRetries: 1 }); // mucho menos que los 10 min que dura el reclamo del seguimiento
+	const res = await cliente.responses.create(
+		{
+			model: modelo,
+			instructions: INSTRUCCIONES_SEGUIMIENTO,
+			input: JSON.stringify(entradaSeguimiento(contexto)),
+			text: { format: { type: "json_schema", name: "seguimiento", strict: true, schema: ESQUEMA_SEGUIMIENTO } },
+		},
+		{ timeout: 60_000, maxRetries: 1 }, // mucho menos que los 10 min que dura el reclamo del seguimiento
+	);
 	const mensaje = (JSON.parse(res.output_text) as { mensaje?: string }).mensaje?.trim();
 	if (!mensaje) throw new Error("La IA devolvió un mensaje vacío");
 	return mensaje;

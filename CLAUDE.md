@@ -127,7 +127,7 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   una sola pieza (`#f-pieza`); hay que adaptarlo a las piezas antes de volver a generar las imágenes.
 - `WIDGET_KEY` es opcional: sin ella la API acepta cualquier pedido que llegue a su URL; con ella exige el
   header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
-  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox y `/api/kommo/mensajes`, `/api/seguimientos` y `/api/seguimientos/[lead]` llevan `?clave=` (`KOMMO_WEBHOOK_KEY`); esas rutas quedan libres de `X-Widget-Key` (`libre` en `hooks.server.ts`).
+  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox y `/api/kommo/mensajes` y `/api/seguimientos` (webhooks de Kommo, sin clave a propósito) tampoco piden `X-Widget-Key` (`libre` en `hooks.server.ts`).
   `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
   se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
 - **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
@@ -144,13 +144,15 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   El webhook de Dropbox va sin `X-Widget-Key` (lo protege la firma); el CSRF de SvelteKit ya no corta `text/plain` (ver webhooks de Kommo). `search_v2` tarda en indexar: con
   `DROPBOX_RAIZ` se va directo a la carpeta. "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
   crea); la API busca el primero por nombre, el segundo lo marca el Salesbot.
-- **Webhooks de Kommo (seguimientos)**: Kommo no firma sus webhooks; los protege `KOMMO_WEBHOOK_KEY` en la URL (`?clave=`,
-  `rechazarWebhookKommo` en `servicio.ts`). Llegan como formulario y sin `Origin`, y SvelteKit los cortaría por CSRF antes
-  de `handle`: por eso `vite.config.ts` tiene `csrf.trustedOrigins: ['*']`. Es seguro mientras la app no tenga form
-  actions ni cookies de sesión; si algún día los tiene, hay que volver a cerrarlo. La conversación vive en un blob
-  brotli por lead (`mensajes.ts`, el `for update` evita pisarse entre webhooks); `seguimientos` tiene una fila por lead y día
-  (`unique (lead_id, fecha)`) y reutiliza el mensaje ya generado en los reintentos. Riesgo conocido: si el bot llega a
-  ejecutarse pero Kommo responde error o timeout, el reintento lo vuelve a lanzar (doble envío).
+- **Webhooks de Kommo (seguimientos)**: Kommo no firma sus webhooks y se decidió **no ponerles clave**: cualquiera que conozca
+  la URL puede inyectar mensajes o disparar un seguimiento (gasto de OpenAI y el bot en un lead); el índice único por lead,
+  día y fecha limita el daño. Llegan como formulario y sin `Origin`, y SvelteKit los cortaría por CSRF antes de `handle`: por
+  eso `vite.config.ts` tiene `csrf.trustedOrigins: ['*']`. Es seguro mientras la app no tenga form actions ni cookies de
+  sesión; si algún día los tiene, hay que volver a cerrarlo. La conversación vive en un blob brotli por lead (`mensajes.ts`,
+  el `for update` evita pisarse entre webhooks); `seguimientos` tiene una fila por lead, día y fecha y reutiliza el mensaje ya
+  generado en los reintentos. El contexto para la IA (`armarContexto` en `seguimientos.ts`) suma el chat, los campos de
+  `CAMPOS_RELEVANTES` (`contexto-lead.ts`) y los seguimientos anteriores. Riesgo conocido: si el bot llega a ejecutarse pero
+  Kommo responde error o timeout, el reintento lo vuelve a lanzar (doble envío).
 - **API de Kommo Drive y campo archivo** (`src/lib/server/widget/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
   el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
   nunca uno de un cliente.

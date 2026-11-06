@@ -197,6 +197,20 @@ export async function leadsPorOrden(orden: string): Promise<number[]> {
 		.map((l) => l.id);
 }
 
+// El lead con sus campos: Kommo ya manda el nombre y el tipo de cada uno junto a sus valores.
+export type LeadKommo = { precio: number; campos: { nombre: string; tipo: string; valores: unknown[] }[] };
+
+export async function leerLead(leadId: number): Promise<LeadKommo> {
+	const lead = (await (await api(`/api/v4/leads/${leadId}`)).json()) as {
+		price?: number;
+		custom_fields_values?: { field_name?: string; field_type?: string; values?: { value?: unknown }[] }[] | null;
+	};
+	return {
+		precio: Number(lead.price) || 0,
+		campos: (lead.custom_fields_values ?? []).map((c) => ({ nombre: c.field_name ?? "", tipo: c.field_type ?? "", valores: (c.values ?? []).map((v) => v.value) })),
+	};
+}
+
 export async function guardarTexto(leadId: number, campoId: number, valor: string) {
 	await api(`/api/v4/leads/${leadId}`, json({ method: "PATCH", cuerpo: { custom_fields_values: [{ field_id: campoId, values: [{ value: valor }] }] } }));
 }

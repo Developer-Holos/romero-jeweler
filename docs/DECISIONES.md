@@ -299,7 +299,14 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
   un texto corto crece.
 - **Si el cliente ya respondió** lo decide el bot de Kommo (por ejemplo, sacando al lead de "Seguimiento"): el servidor
   genera y envía siempre que llega la señal.
-- **Seguridad**: clave en la URL (Kommo no firma) y CSRF de SvelteKit desactivado (ver `CLAUDE.md`).
+- **Seguridad**: sin clave en los webhooks (decisión de Holos: no importa que queden expuestos) y CSRF de SvelteKit
+  desactivado (ver `CLAUDE.md`).
+- **Contexto de la IA**: además del chat, los campos del lead que están en `CAMPOS_RELEVANTES` (lista de nombres, verificada
+  contra la cuenta el 2026-11-06: Servicio, Tipo de anillo, Rango de precios, Plazo espera, País y los `[N] …` de cada anillo)
+  más el precio como presupuesto, y los seguimientos anteriores ya enviados para no repetirse. El día (3 o 7) viene en la
+  URL del webhook (`?dia=`).
+- **Sin decidir**: `[SEG] Plan` (textarea) y `[SEG] Contador - Seguimiento ventas` existen en el lead; podrían sumarse a la
+  lista si dicen algo útil para el seguimiento.
 - **Reintentos**: 5 intentos, con repaso cada 5 min durante 48 h, y una nota en el lead al rendirse.
 - **Pendiente**: ajustar el prompt (`INSTRUCCIONES_SEGUIMIENTO` en `ia.ts`) con ejemplos reales de Romero, y decidir qué hacer
   con el doble envío si el bot se ejecuta pero Kommo responde con error.

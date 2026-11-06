@@ -55,11 +55,11 @@ const ESQUEMA = `
 		cantidad int not null default 0,
 		actualizado timestamptz not null default now()
 	);
-	-- Un seguimiento por lead y día: la clave única evita enviar dos veces el mismo si la señal llega repetida.
+	-- Un seguimiento por lead, día y fecha: el índice único evita enviar dos veces el mismo si la señal llega repetida.
 	create table if not exists seguimientos (
 		id serial primary key,
 		lead_id bigint not null,
-		dia int,
+		dia int not null,
 		fecha date not null default current_date,
 		estado text not null default 'pendiente',
 		intentos int not null default 0,
@@ -67,9 +67,10 @@ const ESQUEMA = `
 		error text,
 		tomado timestamptz,
 		creado timestamptz not null default now(),
-		actualizado timestamptz not null default now(),
-		unique (lead_id, fecha)
+		actualizado timestamptz not null default now()
 	);
+	alter table seguimientos drop constraint if exists seguimientos_lead_id_fecha_key;
+	create unique index if not exists seguimientos_lead_dia_fecha on seguimientos (lead_id, dia, fecha);
 	do $$ begin
 		if exists (select 1 from information_schema.columns where table_name = 'videos' and column_name = 'path') then
 			alter table videos rename column path to carpeta;

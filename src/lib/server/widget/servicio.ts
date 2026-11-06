@@ -46,13 +46,6 @@ export const iguales = (recibida: string | null, esperada: string) => {
 	return a.length === b.length && timingSafeEqual(a, b);
 };
 
-// Los webhooks de Kommo no van firmados: llevan una clave en la URL (?clave=…). null si está bien; si no, la respuesta de error.
-export function rechazarWebhookKommo(url: URL) {
-	if (!env.KOMMO_WEBHOOK_KEY) return fallo("Los webhooks de Kommo no están configurados", 503);
-	if (!iguales(url.searchParams.get("clave"), env.KOMMO_WEBHOOK_KEY)) return fallo("Clave inválida", 401);
-	return null;
-}
-
 export const MB = 1024 * 1024;
 
 export const fallo = (error: string, status: number) => json({ error }, { status });
