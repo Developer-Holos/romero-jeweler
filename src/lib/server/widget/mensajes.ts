@@ -1,7 +1,8 @@
 // Mensajes del chat de cada lead, para que la IA escriba los seguimientos. Kommo los manda por webhook (formulario); se
 // guardan en UNA fila por lead, como JSON compacto comprimido con brotli. Comprimir cada mensaje por separado no sirve
 // (un texto corto crece); toda la conversación junta ocupa mucho menos.
-import { brotliCompressSync, brotliDecompressSync } from "node:zlib";
+import { promisify } from "node:util";
+import { brotliCompress, brotliDecompress, constants } from "node:zlib";
 import type { Db } from "./db.ts";
 
 // [fecha en segundos, "c" (cliente) | "a" (asesor), texto, id del mensaje en Kommo]
@@ -11,8 +12,12 @@ export type Mensaje = { id: string; lead: number; cliente: boolean; texto: strin
 const MAX_MENSAJES = 200; // los más recientes de cada lead
 const MAX_TEXTO = 2000;
 
-const comprimir = (e: Entrada[]) => brotliCompressSync(JSON.stringify(e));
-const descomprimir = (datos: Uint8Array) => JSON.parse(brotliDecompressSync(datos).toString()) as Entrada[];
+// Asíncrono (hilos de Node, no el principal): con muchos clientes escribiendo a la vez el servidor sigue respondiendo.
+// Calidad 5 en vez de la 11 por defecto: comprime varias veces más rápido y el tamaño casi no cambia.
+const brotli = promisify(brotliCompress);
+const desbrotli = promisify(brotliDecompress);
+const comprimir = (e: Entrada[]) => brotli(JSON.stringify(e), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } });
+const descomprimir = async (datos: Uint8Array) => JSON.parse((await desbrotli(datos)).toString()) as Entrada[];
 
 // Kommo manda `message[add][0][text]=…&message[add][0][entity_id]=…`. Solo cuentan los mensajes de un lead; un adjunto
 // sin texto queda como "[imagen]", "[audio]"…
@@ -40,13 +45,13 @@ export async function guardarMensajes(db: Db, mensajes: Mensaje[]) {
 	const porLead = Map.groupBy(mensajes, (m) => m.lead);
 	for (const [lead, nuevos] of porLead) {
 		const { total, bytes, agregados } = await db.transaccion(async (tx) => {
-			await tx.query("insert into conversaciones (lead_id, datos) values ($1, $2) on conflict (lead_id) do nothing", [lead, comprimir([])]);
+			await tx.query("insert into conversaciones (lead_id, datos) values ($1, $2) on conflict (lead_id) do nothing", [lead, await comprimir([])]);
 			const { rows } = await tx.query<{ datos: Uint8Array }>("select datos from conversaciones where lead_id = $1 for update", [lead]);
-			const actual = descomprimir(rows[0].datos);
+			const actual = await descomprimir(rows[0].datos);
 			const vistos = new Set(actual.map((e) => e[3]));
 			const sumar = nuevos.filter((m) => !vistos.has(m.id));
 			const todo = [...actual, ...sumar.map((m): Entrada => [m.fecha, m.cliente ? "c" : "a", m.texto, m.id])].sort((a, b) => a[0] - b[0]).slice(-MAX_MENSAJES);
-			const datos = comprimir(todo);
+			const datos = await comprimir(todo);
 			await tx.query("update conversaciones set datos = $2, cantidad = $3, actualizado = now() where lead_id = $1", [lead, datos, todo.length]);
 			return { total: todo.length, bytes: datos.length, agregados: sumar.length };
 		});
@@ -58,5 +63,5 @@ export async function leerConversacion(db: Db, lead: number) {
 	const { rows } = await db.query<{ datos: Uint8Array; actualizado: Date }>("select datos, actualizado from conversaciones where lead_id = $1", [lead]);
 	if (!rows[0]) return { mensajes: [] as Mensaje[], bytes: 0 };
 	const datos = Buffer.from(rows[0].datos);
-	return { mensajes: descomprimir(datos).map(([fecha, quien, texto, id]): Mensaje => ({ fecha, cliente: quien === "c", texto, id, lead })), bytes: datos.length };
+	return { mensajes: (await descomprimir(datos)).map(([fecha, quien, texto, id]): Mensaje => ({ fecha, cliente: quien === "c", texto, id, lead })), bytes: datos.length };
 }

@@ -532,6 +532,19 @@ describe("seguimientos con IA", () => {
 		assert.ok(e.chat.bytes < 1200, `pesa ${e.chat.bytes} bytes`);
 	});
 
+	it("aguanta 600 clientes escribiendo a la vez sin dejar de responder", async () => {
+		const resto = Array.from({ length: 600 }, (_, i) => enviar(mensaje(`carga${i}`, 20000 + i, `Hola, soy el cliente ${i}, quiero un anillo de oro con diamante`)));
+		// Mientras el servidor comprime, otras rutas siguen contestando rápido (si comprimiera de forma síncrona, esperarían).
+		await new Promise((ok) => setTimeout(ok, 20));
+		const t = Date.now();
+		assert.equal((await app.request("/salud")).status, 200);
+		const demora = Date.now() - t;
+		const respuestas = await Promise.all(resto);
+		assert.ok(respuestas.every((r) => r.status === 200));
+		assert.ok(demora < 1500, `/salud tardó ${demora} ms durante la ráfaga`);
+		assert.equal((await estado(20599)).chat.mensajes, 1);
+	});
+
 	it("la señal pide el día en la URL y el lead en el formulario", async () => {
 		assert.equal((await app.request("/seguimientos", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
 		assert.equal((await app.request("/seguimientos?dia=4", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400); // sin enfoque
