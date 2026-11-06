@@ -2,6 +2,7 @@
 // (cuenta, Drive, leads y archivos) y una base PGlite en una carpeta temporal. Correr `vite build` antes.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
@@ -20,13 +21,57 @@ const kommo = {
 	archivos: new Map<string, { nombre: string; tipo: string; datos: Buffer }>(),
 	lead: new Map<number, ValorCampo[]>(), // valores de campos por lead (cada PATCH los va sumando)
 	adjuntos: new Map<number, string[]>(),
+	notas: [] as { entity_id: number; params: { text: string } }[],
+	bots: [] as { bot_id: number; entity_id: number }[],
 	grupos: [] as { id: string; name: string }[],
 	campos: [{ id: 777, name: "Invoice", type: "file", group_id: null as string | null, sort: 1 }],
 };
+// Dropbox falso: archivos por ruta y la lista de cambios que devuelve list_folder/continue (cursor "cN" = desde N).
+type ArchivoFalso = { ".tag": "file" | "deleted"; name: string; path_lower: string; path_display: string; size?: number; server_modified?: string };
+const dropbox = { cambios: [] as ArchivoFalso[], links: new Map<string, string>() };
+const subirADropbox = (ruta: string) => {
+	const a: ArchivoFalso = { ".tag": "file", name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta, size: 1234, server_modified: "2026-11-03T12:00:00Z" };
+	dropbox.cambios.push(a);
+};
+const borrarDeDropbox = (ruta: string) => dropbox.cambios.push({ ".tag": "deleted", name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta });
+const padre = (ruta: string) => ruta.toLowerCase().split("/").slice(0, -1).join("/");
+
 const falso = createServer(async (req, res) => {
 	const url = new URL(req.url!, "http://x");
 	const base = `http://127.0.0.1:${(falso.address() as { port: number }).port}`;
 	const json = (d: unknown, status = 200) => (res.writeHead(status, { "Content-Type": "application/json" }), res.end(JSON.stringify(d)));
+	if (url.pathname === "/oauth2/token") return json({ access_token: "token-dbx", expires_in: 14400 });
+	if (url.pathname.startsWith("/2/")) {
+		if (req.headers.authorization !== "Bearer token-dbx") return json({ error_summary: "invalid_access_token/" }, 401);
+		const cuerpo = JSON.parse((await leer(req)).toString() || "null");
+		const archivos = [...new Map(dropbox.cambios.map((a) => [a.path_lower, a])).values()].filter((a) => a[".tag"] === "file");
+		switch (url.pathname) {
+			case "/2/users/get_current_account":
+				return json({ root_info: { ".tag": "user", root_namespace_id: "1", home_namespace_id: "1" } });
+			case "/2/files/list_folder/get_latest_cursor":
+				return json({ cursor: `c${dropbox.cambios.length}` });
+			case "/2/files/list_folder/continue": {
+				const desde = Number(String(cuerpo.cursor).slice(1));
+				return json({ entries: dropbox.cambios.slice(desde), cursor: `c${dropbox.cambios.length}`, has_more: false });
+			}
+			case "/2/files/get_metadata": {
+				const ruta = String(cuerpo.path).toLowerCase();
+				const archivo = archivos.find((a) => a.path_lower === ruta);
+				if (archivo) return json(archivo);
+				if (!archivos.some((a) => padre(a.path_lower) === ruta)) return json({ error_summary: "path/not_found/." }, 409);
+				return json({ ".tag": "folder", name: cuerpo.path.split("/").at(-1), path_lower: ruta, path_display: cuerpo.path });
+			}
+			case "/2/files/list_folder":
+				return json({ entries: archivos.filter((a) => padre(a.path_lower) === String(cuerpo.path).toLowerCase()), cursor: "x", has_more: false });
+			case "/2/sharing/create_shared_link_with_settings":
+				if (dropbox.links.has(cuerpo.path)) return json({ error_summary: "shared_link_already_exists/.." }, 409);
+				dropbox.links.set(cuerpo.path, `https://www.dropbox.com/s/falso/${encodeURIComponent(cuerpo.path.split("/").at(-1))}`);
+				return json({ url: dropbox.links.get(cuerpo.path) });
+			case "/2/sharing/list_shared_links":
+				return json({ links: dropbox.links.has(cuerpo.path) ? [{ url: dropbox.links.get(cuerpo.path) }] : [] });
+		}
+		return json({ error_summary: "not_found" }, 404);
+	}
 	if (req.headers.authorization !== "Bearer token-kommo") return json({ title: "Unauthorized" }, 401);
 	if (url.pathname === "/api/v4/account") return json({ drive_url: `${base}/drive` });
 	if (url.pathname === "/drive/v1.0/sessions") {
@@ -84,6 +129,21 @@ const falso = createServer(async (req, res) => {
 		if (!uuids.length) return (res.writeHead(204), res.end());
 		return json({ _embedded: { files: uuids.map((u) => ({ file_uuid: u })) } });
 	}
+	if (url.pathname === "/api/v4/leads" && req.method === "GET") {
+		// query: busca el texto en cualquier campo del lead (como Kommo).
+		const q = url.searchParams.get("query") ?? "";
+		const leads = [...kommo.lead].filter(([, vs]) => vs.some((v) => v.values.some((x) => String(x.value).includes(q)))).map(([id, vs]) => ({ id, custom_fields_values: vs }));
+		if (!leads.length || url.searchParams.get("page") !== "1") return (res.writeHead(204), res.end());
+		return json({ _embedded: { leads } });
+	}
+	if (url.pathname === "/api/v4/leads/notes" && req.method === "POST") {
+		kommo.notas.push(...JSON.parse((await leer(req)).toString()));
+		return json({});
+	}
+	if (url.pathname === "/api/v2/salesbot/run" && req.method === "POST") {
+		kommo.bots.push(...JSON.parse((await leer(req)).toString()));
+		return json({ success: true });
+	}
 	json({ title: "Not found" }, 404);
 });
 
@@ -110,6 +170,12 @@ before(async () => {
 			KOMMO_ACCESS_TOKEN: "token-kommo",
 			KOMMO_CAMPO_INVOICE: "777",
 			OPENAI_MODEL: "modelo-inicial",
+			DROPBOX_APP_KEY: "app-dbx",
+			DROPBOX_APP_SECRET: "secreto-dbx",
+			DROPBOX_REFRESH_TOKEN: "refresh-dbx",
+			DROPBOX_RAIZ: "/Ordenes",
+			DROPBOX_API_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}`,
+			KOMMO_BOT_VIDEO: "4242",
 		},
 		stdio: ["ignore", "pipe", "inherit"],
 	});
@@ -133,6 +199,11 @@ describe("claves y CORS", () => {
 		assert.equal((await app.request("/plantilla")).status, 401);
 		assert.equal((await app.request("/admin/ia", { headers: W })).status, 401);
 		assert.equal((await app.request("/salud")).status, 200);
+	});
+
+	it("no se salta codificando la ruta", async () => {
+		const res = await fetch(`http://127.0.0.1:${PUERTO}/%61pi/plantilla`);
+		assert.equal(res.status, 401);
 	});
 
 	it("deja llamar a la API desde la cuenta de Kommo", async () => {
@@ -276,5 +347,106 @@ describe("campo Invoice que indica el widget", () => {
 		const valores = kommo.lead.get(4242) ?? [];
 		assert.equal(valores.find((v) => v.field_id === 288076)?.values[0].value.file_name, `${numero}.pdf`);
 		assert.equal(valores.some((v) => v.field_id === 777), false);
+	});
+});
+
+describe("video del cliente (Dropbox)", () => {
+	const firmar = (cuerpo: string) => createHmac("sha256", "secreto-dbx").update(cuerpo).digest("hex");
+	const aviso = '{"list_folder":{"accounts":["dbid:1"]}}';
+	// Dropbox manda JSON. Con text/plain, SvelteKit lo cortaría antes (CSRF: "Cross-site POST form submissions").
+	const webhook = (firma = firmar(aviso)) => app.request("/videos/webhook", { method: "POST", headers: { "Content-Type": "application/json", "X-Dropbox-Signature": firma }, body: aviso });
+	const esperar = async (listo: () => boolean) => {
+		for (let i = 0; i < 60 && !listo(); i++) await new Promise((ok) => setTimeout(ok, 50));
+		assert.ok(listo(), "no llegó a tiempo");
+	};
+
+	before(() => {
+		// Lo que el widget dejó creado en la pestaña Orden, y el lead con su Order #.
+		kommo.campos.push({ id: 801, name: "Order #", type: "text", group_id: null, sort: 10 }, { id: 802, name: "Video (link)", type: "url", group_id: null, sort: 16 });
+		kommo.lead.set(7001, [{ field_id: 801, values: [{ value: "1146" as never }] }]);
+	});
+
+	it("responde el challenge de Dropbox y rechaza un aviso sin firma válida", async () => {
+		const res = await app.request("/videos/webhook?challenge=abc123");
+		assert.equal(await res.text(), "abc123");
+		assert.equal(res.headers.get("Content-Type"), "text/plain");
+		assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+		assert.equal((await webhook("firma-mala")).status, 403);
+	});
+
+	it("cuando aparece <orden>_completo, guarda el link, deja una nota y lanza el Salesbot una sola vez", async () => {
+		// El cursor se tomó al arrancar: el primer aviso ya trae el video.
+		subirADropbox("/Ordenes/1146/1146_borrador.mp4");
+		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		assert.equal((await webhook()).status, 200);
+		await esperar(() => kommo.bots.length === 1);
+		assert.deepEqual(kommo.bots[0], { bot_id: 4242, entity_type: 2, entity_id: 7001 });
+		const link = kommo.lead.get(7001)?.find((v) => v.field_id === 802)?.values[0].value as unknown as string;
+		assert.equal(link, "https://www.dropbox.com/s/falso/1146_completo.mp4");
+		assert.ok(kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes(link)));
+
+		// El mismo archivo vuelve a cambiar (o el aviso llega dos veces): no se manda de nuevo.
+		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		await webhook();
+		await new Promise((ok) => setTimeout(ok, 400));
+		assert.equal(kommo.bots.length, 1);
+	});
+
+	it("GET dice cómo está el video sin tocar nada", async () => {
+		const notas = kommo.notas.length;
+		const estado = await (await app.request("/videos/1146", { headers: W })).json();
+		assert.equal(estado.completo, true);
+		assert.equal(estado.carpeta, "/Ordenes/1146");
+		assert.equal(estado.video.nombre, "1146_completo.mp4");
+		assert.equal(estado.lead, 7001);
+		assert.ok(estado.avisado);
+		assert.equal(kommo.notas.length, notas);
+		assert.equal((await (await app.request("/videos/9999", { headers: W })).json()).completo, false);
+		assert.equal((await app.request("/videos/1146")).status, 401); // fuera del webhook pide la clave
+	});
+
+	it("con dos leads con el mismo Order # no manda nada y avisa en los dos", async () => {
+		kommo.lead.set(7002, [{ field_id: 801, values: [{ value: "1147" as never }] }]);
+		kommo.lead.set(7003, [{ field_id: 801, values: [{ value: "#1147" as never }] }]);
+		dropbox.cambios.push({ ".tag": "file", name: "1147_completo.mov", path_lower: "/ordenes/1147/1147_completo.mov", path_display: "/Ordenes/1147/1147_completo.mov", size: 99, server_modified: "2026-11-03T12:00:00Z" });
+		const r = await (await app.request("/videos/1147", { method: "POST", headers: W })).json();
+		assert.equal(r.estado, "varios_leads");
+		assert.deepEqual(r.leads.sort(), [7002, 7003]);
+		assert.equal(kommo.bots.length, 1);
+		assert.ok([7002, 7003].every((id) => kommo.notas.some((n) => n.entity_id === id && n.params.text.includes("2 leads"))));
+
+		// Volver a revisarlo (otro aviso, el repaso) no repite las notas mientras sigan siendo los mismos leads.
+		const notas = kommo.notas.length;
+		await app.request("/videos/1147", { method: "POST", headers: W });
+		await webhook();
+		await new Promise((ok) => setTimeout(ok, 400));
+		assert.equal(kommo.notas.length, notas);
+	});
+
+	it("un video sin lead queda pendiente y se envía cuando aparece el Order #", async () => {
+		subirADropbox("/Ordenes/1148/1148_completo.mp4");
+		await webhook();
+		await new Promise((ok) => setTimeout(ok, 400));
+		assert.equal((await (await app.request("/videos/1148", { headers: W })).json()).pendiente, true);
+		assert.equal(kommo.bots.length, 1);
+
+		kommo.lead.set(7004, [{ field_id: 801, values: [{ value: "1148" as never }] }]);
+		await webhook(); // sin cambios nuevos: lo levanta el reintento
+		await esperar(() => kommo.bots.some((b) => b.entity_id === 7004));
+	});
+
+	it("con DROPBOX_RAIZ solo cuentan las carpetas que están en la raíz", async () => {
+		kommo.lead.set(7005, [{ field_id: 801, values: [{ value: "1149" as never }] }]);
+		subirADropbox("/Ordenes/viejas/1149/1149_completo.mp4");
+		subirADropbox("/Otra/1149/1149_completo.mp4");
+		await webhook();
+		await new Promise((ok) => setTimeout(ok, 400));
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7005));
+	});
+
+	it("si se borra un video ya enviado, deja una nota en el lead", async () => {
+		borrarDeDropbox("/Ordenes/1146");
+		await webhook();
+		await esperar(() => kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes("se borró o se movió")));
 	});
 });

@@ -6,13 +6,14 @@ las decisiones que siguen abiertas, en `docs/DECISIONES.md`.
 ## Qué hay aquí
 
 Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conectado al CRM **Kommo**
-(cuenta `romerojeweler`). Tres piezas:
+(cuenta `romerojeweler`). Cuatro piezas:
 
 | Pieza | Dónde | Qué hace |
 | --- | --- | --- |
 | Tracking de pedidos | `src/routes/orders/[lead_id]`, `src/lib/kommo`, `src/lib/tracking` | Página pública con la etapa de producción del pedido, leída de Kommo. Todo error (404 de rutas sin página, pedido inexistente, 5xx) lo muestra `src/routes/+error.svelte`, en español e inglés |
 | Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices y de órdenes de producción (tarjeta del lead) y editor del diseño (ajustes avanzados) |
 | API del widget | `src/routes/api` + `src/lib/server/widget` | Rutas de SvelteKit que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
+| Video del cliente | `src/routes/api/videos` + `src/lib/server/widget/dropbox.ts`, `videos.ts` | Webhook de Dropbox: cuando aparece `<orden>/<orden>_completo.mp4`, guarda el link en el lead con ese "Order #" y lanza el Salesbot que se lo manda |
 
 ## Arquitectura del widget de invoice
 
@@ -28,7 +29,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 - La interfaz son los componentes de Svelte de `src/lib/invoice/` (`Generador.svelte`, `Disenador.svelte`,
   `InvoicePreview.svelte`), compilados en `widget/app.js` (`vite.widget.config.ts`, entrada `src/widget/main.ts`)
   y montados en un **Shadow DOM** para que su CSS y el de Kommo no se mezclen.
-- `/kommo` y `/kommo/diseno` montan los mismos componentes para probar fuera de Kommo (leen
+- `/kommo`, `/kommo/orden` y `/kommo/diseno` montan los mismos componentes para probar fuera de Kommo (leen
   `/api` de la misma app).
 - Al generar: la API asigna el número (`RJ-AAAA-NNNN`), la IA redacta (en inglés traduce todo), y el PDF
   se guarda en el campo **Invoice** del lead (Kommo Drive) y se descarga. Si Kommo falla, el PDF se descarga
@@ -49,8 +50,9 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
   `/api/v4/widgets`) ni mueve campos entre pestañas (Kommo no lo permitió).
 - **Las pestañas y campos del lead los crea el widget, no la API** (`widget/script.js`, con `$.ajax` a `/api/v4`
   y la sesión del usuario, igual que el widget "IA Campos y Bots"): busca por nombre y crea solo lo que falta. Se
-  crean al instalar (`onSave`) y, si faltan, al usarlas. La API solo sube archivos a Drive y los guarda en el
-  campo que el widget le indica.
+  crean al instalar (`onSave`) y, si faltan, al usarlas. La API no crea campos: sube archivos a Drive y los guarda en
+  el campo que el widget le indica. La excepción es el video del cliente, que llega por el webhook de Dropbox sin pasar
+  por el widget: la API busca "Order #" y "Video (link)" por nombre, escribe el link, deja notas y lanza el Salesbot.
 - Las imágenes de referencia van en la pestaña **"Imágenes de la pieza"**: un campo archivo por imagen ("Imagen 1…N").
   Empiezan 3; si un lead los ocupa, el widget crea el siguiente. El borrador guarda solo sus uuid.
 - **Orden de producción** (`OrdenProduccion.svelte` + `OrdenPreview.svelte`, botón aparte en la tarjeta del lead):
@@ -84,7 +86,10 @@ corepack pnpm build && corepack pnpm test:api  # tests de la API (node:test cont
 node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localhost:4180/lead y /ajustes
 ```
 
-## Entorno (Windows) — problemas conocidos
+## Entorno — problemas conocidos
+
+En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUBDOMAIN=x KOMMO_ACCESS_TOKEN=x`) y
+`test:api` funcionan sin trucos. Lo que sigue es del equipo **Windows**:
 
 - **`pnpm` global roto**: usar `corepack pnpm`. Dentro de scripts de `package.json` no se encadena
   `pnpm algo`; se llama a `vite` / `node` directo.
@@ -121,7 +126,20 @@ node widget/_tour_src/kommo.mjs                # Kommo simulado en http://localh
   una sola pieza (`#f-pieza`); hay que adaptarlo a las piezas antes de volver a generar las imágenes.
 - `WIDGET_KEY` es opcional: sin ella la API acepta cualquier pedido que llegue a su URL; con ella exige el
   header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
-  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget.
+  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox.
+  `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
+  se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
+- **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
+  orden es el **número de la orden pagada** y se compara con el campo "Order #" del lead (`#1146` = `1146`). Una orden se
+  avisa una sola vez, también con varias réplicas: `avisado` se marca con un upsert atómico **antes** de lanzar el bot
+  (`reclamar` en `videos.ts`) y se desmarca si el bot falla; para reenviar, borrar su fila. Una fila con `path` y sin
+  `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada (webhook o repaso
+  cada 10 min, 30 días): por eso el cursor puede avanzar aunque una orden falle. El cursor se toma en el `init` de
+  `hooks.server.ts`, no con el primer webhook (si no, ese video se pierde). Con `DROPBOX_RAIZ` solo cuenta
+  `<raiz>/<orden>/…`, igual en el webhook y en `GET/POST /api/videos/:orden` (`comoVideo`). El link se pide público y
+  falla si el equipo no lo permite. El webhook tiene que recibir JSON: con `text/plain` SvelteKit lo corta por CSRF.
+  `search_v2` tarda en indexar: con `DROPBOX_RAIZ` se va directo a la carpeta.
+  Los campos "Video (link)" y "Video enviado" los crea el widget (`CAMPOS_PEDIDO`, `soloKommo`: no pasan al borrador).
 - **API de Kommo Drive y campo archivo** (`src/lib/server/widget/kommo.ts`): verificada contra la cuenta real el 2026-10-20 en
   el lead de prueba 407872 (subir, campo Invoice, adjuntar, listar, descargar). Para pruebas reales usar ese lead,
   nunca uno de un cliente.

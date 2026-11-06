@@ -5,12 +5,20 @@ import { error, json } from "@sveltejs/kit";
 import * as env from "$app/env/private";
 import { leerAjuste } from "./datos.ts";
 import { abrirDb, type Db } from "./db.ts";
+import { configurarDropbox } from "./dropbox.ts";
 import { configurarKommo } from "./kommo.ts";
 import { cerrarNavegador } from "./pdf.ts";
 
 export { env };
 
 configurarKommo(env.KOMMO_BASE_URL ?? (env.KOMMO_SUBDOMAIN ? `https://${env.KOMMO_SUBDOMAIN}.kommo.com` : ""), env.KOMMO_ACCESS_TOKEN);
+configurarDropbox({
+	api: env.DROPBOX_API_URL,
+	appKey: env.DROPBOX_APP_KEY ?? "",
+	appSecret: env.DROPBOX_APP_SECRET ?? "",
+	refreshToken: env.DROPBOX_REFRESH_TOKEN ?? "",
+	raiz: env.DROPBOX_RAIZ,
+});
 
 let abierta: Promise<Db> | null = null;
 export function db() {

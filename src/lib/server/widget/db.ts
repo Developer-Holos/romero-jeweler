@@ -37,6 +37,19 @@ const ESQUEMA = `
 		actualizado timestamptz not null default now()
 	);
 	create index if not exists invoices_lead on invoices (lead_id);
+	-- Video de cada orden en Dropbox: avisado evita volver a mandarlo; path sin avisado es un aviso pendiente.
+	create table if not exists videos (
+		orden text primary key,
+		lead_id bigint,
+		path text,
+		link text,
+		avisado timestamptz,
+		leads_notados text,
+		creado timestamptz not null default now(),
+		actualizado timestamptz not null default now()
+	);
+	alter table videos add column if not exists leads_notados text;
+	alter table videos add column if not exists creado timestamptz not null default now();
 `;
 
 // `url`: DATABASE_URL. `dir`: carpeta de PGlite; "memoria" para los tests.

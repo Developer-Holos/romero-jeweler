@@ -14,6 +14,7 @@
 //   GET/POST /api/v4/leads/custom_fields/groups → pestañas de campos del lead
 //   GET/POST /api/v4/leads/custom_fields        → campos (los de imágenes son de tipo "file")
 import { MAX_ARCHIVO } from "../../invoice/servidor.ts";
+import { mismaOrden } from "./dropbox.ts";
 
 export type ArchivoKommo = { uuid: string; version_uuid: string; nombre: string; tamano: number; tipo: string };
 
@@ -169,4 +170,41 @@ export async function descargarArchivo(uuid: string) {
 	if (!href) throw new ErrorKommo("El archivo no tiene enlace de descarga en Kommo Drive", 404);
 	const res = await pedir(href);
 	return { datos: new Uint8Array(await res.arrayBuffer()), tipo: res.headers.get("content-type") ?? info.metadata?.mime_type ?? "application/octet-stream" };
+}
+
+// ─── Video del cliente (src/lib/server/widget/videos.ts) ────────────────────
+// Los campos "Order #" y "Video (link)" de la pestaña "Orden" los crea el widget; la app los busca por nombre.
+export const CAMPO_ORDEN = "Order #";
+export const CAMPO_VIDEO = "Video (link)";
+
+let camposLead: { hasta: number; campos: Campo[] } | null = null;
+export async function campoPorNombre(nombre: string) {
+	if (!camposLead || camposLead.hasta < Date.now()) camposLead = { hasta: Date.now() + 60_000, campos: await todos<Campo>("/api/v4/leads/custom_fields", "custom_fields") };
+	return camposLead.campos.find((c) => c.name === nombre) ?? null;
+}
+
+
+type LeadConValores = { id: number; custom_fields_values?: { field_id: number; values?: { value?: unknown }[] }[] | null };
+
+// Leads cuyo "Order #" es exactamente `orden`. La búsqueda de Kommo (query) es por texto en todos los campos, así
+// que se vuelve a comparar el campo.
+export async function leadsPorOrden(orden: string): Promise<number[]> {
+	const campo = await campoPorNombre(CAMPO_ORDEN);
+	if (!campo) throw new ErrorKommo(`No existe el campo "${CAMPO_ORDEN}" (lo crea el widget en la pestaña Orden)`, 404);
+	const leads = await todos<LeadConValores>(`/api/v4/leads?query=${encodeURIComponent(orden)}`, "leads");
+	return leads
+		.filter((l) => l.custom_fields_values?.find((c) => c.field_id === campo.id)?.values?.some((v) => mismaOrden(String(v.value ?? ""), orden)))
+		.map((l) => l.id);
+}
+
+export async function guardarTexto(leadId: number, campoId: number, valor: string) {
+	await api(`/api/v4/leads/${leadId}`, json({ method: "PATCH", cuerpo: { custom_fields_values: [{ field_id: campoId, values: [{ value: valor }] }] } }));
+}
+
+export async function agregarNota(leadId: number, texto: string) {
+	await api("/api/v4/leads/notes", json({ method: "POST", cuerpo: [{ entity_id: leadId, note_type: "common", params: { text: texto } }] }));
+}
+
+export async function lanzarBot(botId: number, leadId: number) {
+	await api("/api/v2/salesbot/run", json({ method: "POST", cuerpo: [{ bot_id: botId, entity_type: 2, entity_id: leadId }] }));
 }

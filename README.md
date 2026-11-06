@@ -143,8 +143,10 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `GET/POST /opciones` | Opciones compartidas: metales, quilates, piedras, formas, ubicaciones y campos extra de la orden |
 | `POST /ia/traducir` | Traduce los nombres de las filas de la orden (y, si se pide, los valores). Sin IA, los devuelve igual |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
+| `GET/POST /videos/webhook` | Webhook de Dropbox (firmado; no pide `X-Widget-Key`): avisa al lead cuando aparece `<orden>/<orden>_completo.mp4` |
+| `GET/POST /videos/:orden` | Estado del video de una orden en Dropbox (GET, sin efectos) / revisarlo y avisar al lead a mano (POST) |
 
-Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud` y `/api/admin` pide además el header
+Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud`, `/api/admin` y `/api/videos/webhook` pide además el header
 `X-Widget-Key` (lo revisa `src/hooks.server.ts`, junto con CORS). Los navegadores solo pueden llamarla desde los
 orígenes de `ORIGENES`.
 
@@ -156,6 +158,36 @@ pnpm build && pnpm preview   # o `node build`; sin DATABASE_URL usa PGlite en da
 En Railway, el `Dockerfile` usa la imagen de Playwright (Chromium para los PDF) y fija `BODY_SIZE_LIMIT=25M`:
 adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las imágenes adentro.
 
+### Video del cliente (Dropbox)
+
+Cada orden tiene en Dropbox una carpeta con el **número de la orden pagada de Shopify** (`1146/`). Cuando el video
+está terminado se llama `1146_completo.mp4` (también `.mov`, `.m4v`, `.avi`, `.mkv`). Dropbox avisa al webhook; la
+app busca el lead cuyo **Order #** es `1146` (o `#1146`) y:
+
+1. crea un link compartido de Dropbox y lo guarda en **Video (link)**;
+2. deja una nota en el lead con el link;
+3. lanza el Salesbot `KOMMO_BOT_VIDEO`, que manda el link por WhatsApp y marca **Video enviado**.
+
+Cada orden se avisa una sola vez (tabla `videos`), aunque haya varias réplicas. Si hay dos leads con el mismo Order #,
+no se envía nada y queda una nota en los dos. Lógica: `src/lib/server/widget/dropbox.ts` y `videos.ts`.
+
+Alta (una vez, Holos):
+
+```sh
+# 1. App Console (https://www.dropbox.com/developers/apps): acceso "Full Dropbox",
+#    scopes files.metadata.read y sharing.write. App key y secret → DROPBOX_APP_KEY / DROPBOX_APP_SECRET.
+# 2. Refresh token: abrir en el navegador, autorizar y copiar el código
+#    https://www.dropbox.com/oauth2/authorize?client_id=APP_KEY&response_type=code&token_access_type=offline
+curl https://api.dropboxapi.com/oauth2/token -d code=CODIGO -d grant_type=authorization_code \
+  -u APP_KEY:APP_SECRET            # refresh_token → DROPBOX_REFRESH_TOKEN
+# 3. DROPBOX_RAIZ = carpeta que contiene las de las órdenes (vacía: se buscan por nombre, con retraso de índice).
+# 4. Webhook en el App Console: https://romero-jeweler-production.up.railway.app/api/videos/webhook
+# 5. KOMMO_BOT_VIDEO = id del Salesbot "Enviar video".
+```
+
+La app toma el cursor de Dropbox al arrancar: los videos que ya estaban antes se pasan con `POST /api/videos/:orden`.
+Un video sin lead (Order # vacío) o con un error queda pendiente y se reintenta solo, cada 10 minutos, durante 30 días.
+
 **Campos de los leads en Kommo (cuenta `romerojeweler`):**
 
 | Campo | Tipo | Id | Lo usa |
@@ -164,6 +196,8 @@ adapter-node corta los cuerpos de más de 512 KB y el HTML de un PDF trae las im
 | Orden de producción (PDF) | Archivo | 288078 | La API guarda ahí el PDF de la orden |
 | N° de Anillos | Numérico | 283974 | El widget guarda cuántas piezas tiene el invoice; Group Fields muestra esos grupos |
 | `*Anillo °N*` … `[N] …` … `*!` | — | — | Un grupo por anillo en la pestaña Orden; el widget crea los que falten |
+| Order # | Texto | — | Número de la orden pagada de Shopify; con él la app encuentra el lead del video |
+| Video (link) · Video enviado | URL · Casilla | — | La app guarda el link de Dropbox; el Salesbot marca la casilla al enviarlo |
 
 El widget busca los campos de la pestaña Orden por nombre, así que los ids pueden cambiar.
 

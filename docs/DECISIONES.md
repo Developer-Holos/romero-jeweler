@@ -10,7 +10,7 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 
 | # | Decisión | Estado | Qué falta |
 | --- | --- | --- | --- |
-| 1 | PDF al campo "Invoice" (archivo) del lead | Hecho | API verificada con la cuenta real; falta la prueba desde el widget (#14) |
+| 1 | PDF al campo "Invoice" (archivo) de la pestaña "Orden" | Hecho | API verificada con la cuenta real; falta la prueba desde el widget (#14) |
 | 2 | Postgres gestionado | Hecho | Crear la base en Railway |
 | 3 | Correlativo `RJ-AAAA-NNNN` de la API | Hecho · Externo | Que Romero o su contador confirmen el formato |
 | 4 | Railway, cuenta de Holos | Hecho | Publicado; falta agregarle Postgres y las variables |
@@ -21,18 +21,20 @@ cuenta real) · **Externo** (depende de Romero, su contador o una configuración
 | 9 | Borrador en la app (Postgres), por lead | Hecho | — |
 | 10 | Textos legales en el diseñador; Romero los revisa | Hecho · Externo | Que Romero confirme `docs/TEXTOS_PARA_ROMERO.md` |
 | 11 | Sales tax | Externo | Respuesta del contador (mientras tanto 0 % editable) |
-| 12 | Campos de producto y precio del lead solo lectura | Por verificar | Campos creados; probar la precarga con un lead real |
+| 12 | Campos de producto (ahora `[N] …` por anillo) y precio del lead solo lectura | Por verificar | Probar con un lead real |
 | 13 | La API va dentro de la app de SvelteKit | Hecho | — |
 | 14 | Instalación privada; la hace y la prueba Holos | Externo | Instalar y probar con un lead real |
 
 **Bloquea producción:** #3 (formato), #4 (app publicada con Postgres), #6 (prueba con OpenAI), #10 (textos de Romero),
-#11 (sales tax) y #14 (prueba con el widget instalado en la cuenta real, que cubre también #12).
+#11 (sales tax), #14 (prueba con el widget instalado en la cuenta real, que cubre también #12) y los errores de la
+[revisión del 2026-11-03](#revisión-de-código-2026-11-03) marcados como importantes.
 
 **Lead de prueba en Kommo:** 407872 ("prueba", embudo Ventas). Quedaron en él, de la verificación del 2026-10-20,
 `PRUEBA-widget-invoice.pdf` en el campo Invoice y `PRUEBA-widget-imagen.png` como archivo adjunto.
 
-**Ids de los campos en Kommo** (cuenta `romerojeweler`, leads): Invoice 133486 · Metal 133508 · Quilates 133510 ·
-Piedra 133562 · Talla 133564.
+**Ids de los campos en Kommo** (cuenta `romerojeweler`, leads, desde el 2026-10-29): Invoice 288076 · Orden de
+producción (PDF) 288078 · N° de Anillos 283974. Los campos `[N] …` de cada anillo los busca el widget por nombre. Los
+anteriores (Invoice 133486, Metal 133508, Quilates 133510, Piedra 133562, Talla 133564) **se borraron**.
 
 ---
 
@@ -47,7 +49,9 @@ Piedra 133562 · Talla 133564.
   completo queda en la tabla `invoices` de Postgres.
 
 **Falta:**
-- ~~Crear el campo "Invoice"~~ Creado el 2026-10-20: **id 133486**, tipo archivo. Va en `KOMMO_CAMPO_INVOICE`.
+- ~~Crear el campo "Invoice"~~ Creado el 2026-10-20 (id 133486). **Reemplazado el 2026-10-29** por el campo Invoice
+  de la pestaña "Orden" (**id 288076**): el widget le pasa su id a la API (`campo_id`); `KOMMO_CAMPO_INVOICE` queda solo
+  de respaldo.
 - ~~Verificar la API con la cuenta real~~ **Verificado el 2026-10-20** con `kommo.ts` (entonces en `server/src`) y el token de la
   cuenta, en el lead de prueba 407872: la subida a Kommo Drive (`drive-c.kommo.com`, sesión + partes) devuelve
   `uuid` y `version_uuid`, y el campo Invoice acepta el valor `{ file_uuid, version_uuid, file_name, file_size }`
@@ -208,6 +212,10 @@ qué porcentaje. Según eso se quita la línea, se precarga un valor o se calcul
 Quilates (lista: 10k, 14k, 18k), Piedra (lista: Diamante, Esmeralda, Zafiro, Rubí, Moissanita, Morganita) y Talla
 (área de texto). Tipos y opciones verificados por API el 2026-10-20.
 
+**Cambio (2026-10-29):** esos cuatro campos sueltos se borraron al rehacer la pestaña "Orden". Ahora cada pieza tiene
+sus campos `[N] Metal`, `[N] Quilates`, `[N] Piedra`, `[N] Talla`… en su grupo `*Anillo °N*` (ver "Varias piezas"
+abajo), y las opciones de los campos de selección salen de las opciones compartidas (`/api/opciones`).
+
 **Falta:** probar la precarga con un lead real, y verificar ahí el nombre del responsable
 (`APP.constant('managers')`) y que el panel aparezca a la primera.
 
@@ -283,3 +291,96 @@ depósito, anillo o fila de la orden ya no pregunta "¿seguro?": muestra "Deshac
 lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que la opción queda para todos y en Kommo.
 "Ocultar índice" en vez de "Ocultar", y menos texto en las ayudas.
 
+
+## Video del cliente (Dropbox)
+
+**Pedido (2026-11-03):** detectar cuándo el video del cliente está terminado en Dropbox y automatizar en Kommo el
+envío y el check de "video enviado".
+
+**Decidido:** el identificador es el **número de la orden pagada de Shopify** (carpeta `1146/`, video
+`1146_completo.mp4`, campo "Order #" del lead). El cliente recibe un **link compartido de Dropbox** (los videos pasan
+de los 9 MB que acepta Kommo). La detección es por **webhook de Dropbox**.
+
+**Hecho** (`src/lib/server/widget/dropbox.ts`, `videos.ts`, `src/routes/api/videos`):
+- Webhook firmado (`X-Dropbox-Signature`). Pide los cambios con `list_folder/continue` y el cursor guardado en
+  `ajustes`. El cursor se toma **al arrancar la app** (`init` de `hooks.server.ts`), así el primer video ya cuenta.
+- Con un video completo, busca el lead por "Order #" (`GET /api/v4/leads?query=` y comparación exacta). Guarda el link
+  (pedido como público: si la política del equipo lo deja solo para el equipo, falla con un aviso) en "Video (link)",
+  deja una nota y lanza el Salesbot `KOMMO_BOT_VIDEO`.
+- **Una sola vez por orden, aunque haya varias réplicas:** `avisado` se marca en la tabla `videos` con un upsert
+  atómico *antes* de lanzar el bot; si el bot falla, se desmarca. Si la app muere justo entre medio, gana no
+  mandarlo dos veces (para reenviar, borrar la fila).
+- **Pendientes:** sin lead, con varios leads o con un error, la fila queda con `path` y sin `avisado`, y se reintenta
+  en cada pasada (webhook o repaso cada 10 min) durante 30 días. Así el video sale solo cuando un asesor llena el
+  Order # después. Con varios leads, la nota se deja una vez por combinación de leads.
+- Con `DROPBOX_RAIZ`, el webhook solo acepta `<raiz>/<orden>/<orden>_completo.*` (lo mismo que mira `GET/POST`); sin
+  ella, la carpeta de la orden puede estar a cualquier profundidad.
+- Si se borra o mueve un video ya enviado, se deja una nota en el lead (el link puede dejar de abrir).
+- Si Dropbox reinicia el cursor (`reset`), lo que cambió entre medio se pierde: queda un aviso en el log y esos videos
+  se pasan a mano con `POST /api/videos/:orden`.
+- `GET /api/videos/:orden` dice cómo está el video, sin efectos. `POST` lo revisa a mano (videos que ya estaban, o
+  un webhook perdido).
+- Cuenta de equipo: se agrega `Dropbox-API-Path-Root` si `get_current_account` dice `team`.
+- El widget crea "Video (link)" (URL) y "Video enviado" (casilla) en la pestaña Orden (versión 1.3.0).
+- Probado contra un Dropbox y un Kommo simulados (`app.test.ts`).
+
+**Falta (Holos / Romero):**
+1. App de Dropbox, refresh token y webhook (pasos en el README). Confirmar la estructura real de carpetas para fijar
+   `DROPBOX_RAIZ`, y si es una cuenta de equipo.
+2. Salesbot "Enviar video": mensaje de WhatsApp con el link (texto que confirma Romero) y marcar "Video enviado". Su id
+   va en `KOMMO_BOT_VIDEO`.
+3. Instalar el widget 1.3.0 para que cree los dos campos nuevos.
+4. Prueba real: `PRUEBA/PRUEBA_completo.mp4` con "Order #" = PRUEBA en el lead de prueba **407872**.
+5. Hasta que llegue lo de Shopify, el "Order #" se llena a mano.
+
+## Shopify: link de pago (pendiente)
+
+**Pedido (2026-11-03):** al generar el link de pago, identificar el lead y guardar en Kommo el id de la orden.
+**Queda para después.** Antes hay que preguntarle a Romero cómo crea hoy los links de pago.
+
+**Propuesta** (APIs revisadas el 2026-11-03, Admin GraphQL 2026-10):
+- Lo ideal: que **el widget cree el draft order** desde el invoice (`draftOrderCreate`, con el id del lead en
+  `customAttributes`) y guarde en Kommo el `invoiceUrl` (el link de pago) y el nombre del draft (`#D12`).
+- El número de la orden (`#1146`) recién existe cuando el cliente paga. El webhook `orders/paid` (firma
+  `X-Shopify-Hmac-Sha256`, dedupe con `X-Shopify-Webhook-Id`) llenaría "Order #" del lead. Iría en
+  `src/routes/api/shopify` (carpeta ya creada, vacía).
+- Autenticación: app del **Dev Dashboard** con *client credentials grant* (token de 24 h, la app y la tienda en la
+  misma organización). Desde 2026 ya no se pueden crear apps personalizadas desde el admin de Shopify.
+- **Verificar** con un draft de prueba que los `customAttributes` pasan a la orden al pagarla (la documentación no lo
+  dice). Si no pasan, guardar la relación draft → lead en la app y buscarla desde `orders/paid`.
+
+## Revisión de código (2026-11-03)
+
+Se revisaron los commits `eb3e0a1`…`cfb5204` (de `6439010` en adelante) y la guardia de `/api`. `pnpm check` da 0
+errores, `pnpm build` compila y `pnpm test:api` pasa 29/29 (en Linux). Solo está corregido el #1.
+
+**Importantes:**
+
+1. ~~**La guardia de `/api` se salta codificando la ruta**~~ **Corregido el 2026-11-03** (`event.route.id`, test en `app.test.ts`) (`src/hooks.server.ts`). El hook compara `event.url.pathname`
+   sin decodificar, pero SvelteKit busca la ruta decodificada (`decode_pathname`). `PUT /%61pi/borradores/407872` llega
+   al handler sin CORS ni `X-Widget-Key`, aunque `WIDGET_KEY` esté definida. Lo mismo cambia si `/api/salud` y
+   `/api/admin` quedan libres o no. Arreglo: decidir con `event.route.id` (la ruta que SvelteKit reconoció).
+2. **Si `leerOrden` falla, la orden abre con el borrador de otro lead** (`OrdenProduccion.svelte`, `onMount`). En el
+   error no se carga el borrador: queda el anterior (otro lead de la misma página de Kommo) y el autoguardado o
+   "Generar" lo escriben en este lead. `Generador.svelte` ya lo evita con `.catch(() => null)`.
+3. **Valores viejos de Kommo pasan al anillo equivocado** (`anilloAKommo` / `aplicarKommo` en `invoice.svelte.ts`).
+   `anilloAKommo` no manda vacíos los campos propios de la orden (Width, Thickness, Est. Weight, Head style, `x_*`) que
+   la pieza no tiene; al quitar una pieza, el grupo N conserva los de la anterior y al reabrir se copian a la nueva.
+4. **`estructura()` sin exclusión** (`widget/script.js`). Dos llamadas a la vez (agregar pieza dos veces, o agregar y
+   generar) pueden crear dos veces el mismo grupo `*Anillo °N*`; dos PATCH de opciones en paralelo mandan cada uno la
+   lista completa y Kommo borra la opción del otro. Arreglo: una cola de promesas.
+5. **Opciones compartidas: gana el último** (`/api/opciones`, POST). Lee, agrega y reescribe todo el documento; dos
+   asesores a la vez pierden una opción (que sí queda en Kommo).
+
+**Menores:**
+
+- "Ring Type" cambiado en la fila de la orden sale en el PDF pero no va a Kommo (`anilloAKommo` usa siempre `p.tipo`).
+- El cierre `*!` se busca por `sort` (1000 + N·100 … +99): si el grupo 1 hecho a mano tiene otro `sort`, el widget puede
+  crear un `*!` repetido. Verificar en la cuenta real.
+- "Deshacer" al quitar un depósito restaura la foto completa y pisa lo cambiado en esos 8 s.
+- `+error.svelte`: `notFound` (nombre en inglés); un 403/410 en `/orders/…` pierde el texto del pedido; el título
+  bilingüe es tan largo que el inglés no se ve en la pestaña.
+- El tour (`widget/_tour_src/capturas.mjs`) todavía busca el formulario de una sola pieza (`#f-pieza`).
+
+**Revisado sin defectos:** migración de borradores viejos, montos (`totales`), promesas jQuery, `campo_id` con respaldo,
+413, timeouts de 30 s, tope de 9 MB y compresión de imágenes, `validarTraduccion`.

@@ -18,5 +18,13 @@ export const variables = defineEnvVars({
   DATABASE_URL: { schema: opcional, description: 'Postgres (Railway). Sin ella se usa PGlite en DATA_DIR' },
   DATA_DIR: { schema: (v) => opcional(v) ?? 'data', description: 'Carpeta de PGlite cuando no hay DATABASE_URL' },
   KOMMO_BASE_URL: { schema: opcional, description: 'Solo para probar con el Kommo simulado; por defecto https://KOMMO_SUBDOMAIN.kommo.com' },
-  KOMMO_CAMPO_INVOICE: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del campo "Invoice" (archivo) del lead. Sin él, el PDF solo se descarga' }
+  KOMMO_CAMPO_INVOICE: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del campo "Invoice" (archivo) del lead. Sin él, el PDF solo se descarga' },
+
+  // Video del cliente en Dropbox (/api/videos). Sin las tres credenciales, la sección queda apagada.
+  DROPBOX_APP_KEY: { schema: opcional, description: 'App key de la app de Dropbox (App Console)' },
+  DROPBOX_APP_SECRET: { schema: opcional, description: 'App secret: renueva el token y firma el webhook' },
+  DROPBOX_REFRESH_TOKEN: { schema: opcional, description: 'Refresh token (token_access_type=offline)' },
+  DROPBOX_RAIZ: { schema: (v) => opcional(v) ?? '', description: 'Carpeta que contiene las carpetas de las órdenes. Vacía: se buscan por nombre en todo Dropbox' },
+  DROPBOX_API_URL: { schema: opcional, description: 'Solo para probar con un Dropbox simulado' },
+  KOMMO_BOT_VIDEO: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del Salesbot que manda el link del video. Sin él, solo se guarda el link y una nota' }
 });
