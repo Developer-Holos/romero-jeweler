@@ -9,7 +9,12 @@ import { iniciarVideos } from '#lib/server/widget/videos.ts';
 // El cursor de Dropbox se toma al arrancar: si esperara al primer webhook, el video que lo dispara se perdería.
 export const init: ServerInit = async () => {
   if (!dropboxConfigurado()) return;
-  await iniciarVideos(await db(), env.KOMMO_BOT_VIDEO).catch((e) => console.error('[videos] no se pudo iniciar:', e));
+  // Si falla (Postgres o Dropbox caídos), la app arranca igual: el cursor se toma con el primer aviso.
+  try {
+    await iniciarVideos(await db(), env.KOMMO_BOT_VIDEO);
+  } catch (e) {
+    console.error('[videos] no se pudo iniciar:', e);
+  }
 };
 
 const CORS = {
