@@ -532,17 +532,42 @@ describe("seguimientos con IA", () => {
 		assert.ok(e.chat.bytes < 1200, `pesa ${e.chat.bytes} bytes`);
 	});
 
-	it("aguanta 600 clientes escribiendo a la vez sin dejar de responder", async () => {
-		const resto = Array.from({ length: 600 }, (_, i) => enviar(mensaje(`carga${i}`, 20000 + i, `Hola, soy el cliente ${i}, quiero un anillo de oro con diamante`)));
-		// Mientras el servidor comprime, otras rutas siguen contestando rápido (si comprimiera de forma síncrona, esperarían).
-		await new Promise((ok) => setTimeout(ok, 20));
-		const t = Date.now();
-		assert.equal((await app.request("/salud")).status, 200);
-		const demora = Date.now() - t;
-		const respuestas = await Promise.all(resto);
+	it("aguanta 600 mensajes a la vez en chats largos sin dejar de responder", async () => {
+		// 30 leads con 190 mensajes largos y distintos (comprimirlos cuesta de verdad); después 600 mensajes nuevos de golpe.
+		const BASE = 30000, LEADS = 30, RAFAGA = 600;
+		const largo = (i: number) => `Mensaje ${i}: ${Math.random().toString(36).repeat(8)} quiero un anillo de oro con diamante y entrega rápida`;
+		for (let l = 0; l < LEADS; l++) {
+			const previo = new URLSearchParams();
+			for (let i = 0; i < 190; i++) {
+				previo.set(`message[add][${i}][id]`, `p${l}-${i}`);
+				previo.set(`message[add][${i}][entity_id]`, String(BASE + l));
+				previo.set(`message[add][${i}][entity_type]`, "lead");
+				previo.set(`message[add][${i}][type]`, "incoming");
+				previo.set(`message[add][${i}][text]`, largo(i));
+				previo.set(`message[add][${i}][created_at]`, String(1762400000 + i));
+			}
+			assert.equal((await enviar(previo.toString())).status, 200);
+		}
+
+		// Mientras llega la ráfaga, se sondea /salud cada 10 ms: si el servidor se bloquea comprimiendo, alguna respuesta tarda.
+		let sondeando = true;
+		let peor = 0;
+		const sondeo = (async () => {
+			while (sondeando) {
+				const t = Date.now();
+				await app.request("/salud");
+				peor = Math.max(peor, Date.now() - t);
+				await new Promise((ok) => setTimeout(ok, 10));
+			}
+		})();
+		const respuestas = await Promise.all(Array.from({ length: RAFAGA }, (_, i) => enviar(mensaje(`rafaga${i}`, BASE + (i % LEADS), largo(i), "incoming", 1762500000 + i))));
+		sondeando = false;
+		await sondeo;
 		assert.ok(respuestas.every((r) => r.status === 200));
-		assert.ok(demora < 1500, `/salud tardó ${demora} ms durante la ráfaga`);
-		assert.equal((await estado(20599)).chat.mensajes, 1);
+		assert.ok(peor < 1000, `/salud llegó a tardar ${peor} ms durante la ráfaga`);
+		// Cada lead tenía 190 y recibió 20: queda en el tope de 200, con lo último que llegó.
+		const e = await estado(BASE);
+		assert.equal(e.chat.mensajes, 200);
 	});
 
 	it("la señal pide el día en la URL y el lead en el formulario", async () => {

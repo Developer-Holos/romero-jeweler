@@ -2,7 +2,7 @@
 // guardan en UNA fila por lead, como JSON compacto comprimido con brotli. Comprimir cada mensaje por separado no sirve
 // (un texto corto crece); toda la conversación junta ocupa mucho menos.
 import { promisify } from "node:util";
-import { brotliCompress, brotliDecompress, constants } from "node:zlib";
+import { brotliCompress, brotliCompressSync, brotliDecompress, constants } from "node:zlib";
 import type { Db } from "./db.ts";
 
 // [fecha en segundos, "c" (cliente) | "a" (asesor), texto, id del mensaje en Kommo]
@@ -14,10 +14,12 @@ const MAX_TEXTO = 2000;
 
 // Asíncrono (hilos de Node, no el principal): con muchos clientes escribiendo a la vez el servidor sigue respondiendo.
 // Calidad 5 en vez de la 11 por defecto: comprime varias veces más rápido y el tamaño casi no cambia.
-const brotli = promisify(brotliCompress);
-const desbrotli = promisify(brotliDecompress);
-const comprimir = (e: Entrada[]) => brotli(JSON.stringify(e), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } });
-const descomprimir = async (datos: Uint8Array) => JSON.parse((await desbrotli(datos)).toString()) as Entrada[];
+const brotliAsync = promisify(brotliCompress);
+const desbrotliAsync = promisify(brotliDecompress);
+const comprimir = (e: Entrada[]) => brotliAsync(JSON.stringify(e), { params: { [constants.BROTLI_PARAM_QUALITY]: 5 } });
+const descomprimir = async (datos: Uint8Array) => JSON.parse((await desbrotliAsync(datos)).toString()) as Entrada[];
+// Para crear la fila si no existe (una vez, al cargar el módulo: son 5 bytes).
+const CONVERSACION_VACIA = brotliCompressSync("[]");
 
 // Kommo manda `message[add][0][text]=…&message[add][0][entity_id]=…`. Solo cuentan los mensajes de un lead; un adjunto
 // sin texto queda como "[imagen]", "[audio]"…
@@ -45,7 +47,7 @@ export async function guardarMensajes(db: Db, mensajes: Mensaje[]) {
 	const porLead = Map.groupBy(mensajes, (m) => m.lead);
 	for (const [lead, nuevos] of porLead) {
 		const { total, bytes, agregados } = await db.transaccion(async (tx) => {
-			await tx.query("insert into conversaciones (lead_id, datos) values ($1, $2) on conflict (lead_id) do nothing", [lead, await comprimir([])]);
+			await tx.query("insert into conversaciones (lead_id, datos) values ($1, $2) on conflict (lead_id) do nothing", [lead, CONVERSACION_VACIA]);
 			const { rows } = await tx.query<{ datos: Uint8Array }>("select datos from conversaciones where lead_id = $1 for update", [lead]);
 			const actual = await descomprimir(rows[0].datos);
 			const vistos = new Set(actual.map((e) => e[3]));

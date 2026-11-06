@@ -296,7 +296,8 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 
 - **Mensajes**: se guardan los de los dos lados (cliente y asesor) para que la IA no repita lo que ya se dijo. Un blob
   comprimido por lead (brotli, últimos 200 mensajes, 2000 caracteres cada uno): comprimir mensaje a mensaje no sirve porque
-  un texto corto crece.
+  un texto corto crece. Se comprime de forma asíncrona (hilos de Node) y con calidad 5: con la versión síncrona
+  y calidad 11, 600 mensajes seguidos en chats largos dejaron al servidor sin responder 31 s (medido en el test de carga).
 - **Si el cliente ya respondió** lo decide el bot de Kommo (por ejemplo, sacando al lead de "Seguimiento"): el servidor
   genera y envía siempre que llega la señal.
 - **Seguridad**: sin clave en los webhooks (decisión de Holos: no importa que queden expuestos) y CSRF de SvelteKit
