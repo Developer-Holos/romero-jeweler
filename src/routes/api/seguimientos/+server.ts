@@ -15,6 +15,6 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const base = await db();
 	const { id, estado, nuevo } = await registrarSeguimiento(base, lead, dia);
 	console.log(`[seguimientos] señal: lead ${lead} día ${dia ?? "?"} → ${nuevo ? "nuevo" : `ya existía (${estado})`}`);
-	if (estado === "pendiente") procesarSeguimiento(base, id, await seguimientoConfig());
+	if (estado === "pendiente") procesarSeguimiento(base, id, await seguimientoConfig()).catch((e) => console.error(`[seguimientos] lead ${lead}:`, e));
 	return json({ id, estado }, { status: 202 });
 };

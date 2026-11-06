@@ -127,7 +127,7 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   una sola pieza (`#f-pieza`); hay que adaptarlo a las piezas antes de volver a generar las imágenes.
 - `WIDGET_KEY` es opcional: sin ella la API acepta cualquier pedido que llegue a su URL; con ella exige el
   header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
-  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox.
+  `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox y `/api/kommo/mensajes`, `/api/seguimientos` y `/api/seguimientos/[lead]` llevan `?clave=` (`KOMMO_WEBHOOK_KEY`); esas rutas quedan libres de `X-Widget-Key` (`libre` en `hooks.server.ts`).
   `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
   se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
 - **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
@@ -141,7 +141,7 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   `GET/POST /api/videos/:orden` (`comoVideo`).
   En "Video (link)" va el link de la **carpeta** de la orden, no el del archivo (a veces hay varios formatos); se avisa
   con el primer `_completo`. Se pide público y falla si el equipo no lo permite. El cliente ve todo lo de esa carpeta.
-  El webhook tiene que recibir JSON: con `text/plain` SvelteKit lo corta por CSRF. `search_v2` tarda en indexar: con
+  El webhook de Dropbox va sin `X-Widget-Key` (lo protege la firma); el CSRF de SvelteKit ya no corta `text/plain` (ver webhooks de Kommo). `search_v2` tarda en indexar: con
   `DROPBOX_RAIZ` se va directo a la carpeta. "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
   crea); la API busca el primero por nombre, el segundo lo marca el Salesbot.
 - **Webhooks de Kommo (seguimientos)**: Kommo no firma sus webhooks; los protege `KOMMO_WEBHOOK_KEY` en la URL (`?clave=`,

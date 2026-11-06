@@ -177,7 +177,7 @@ Una fila por lead y día en `seguimientos`: una señal repetida el mismo día no
 generado se reutiliza, así que OpenAI no se paga dos veces. A los 5 intentos pasa a `fallido` y se deja una nota en el lead.
 Si el cliente ya respondió, decide el bot de Kommo (el servidor envía siempre que llega la señal).
 
-Depurar: `GET /api/seguimientos/<lead>` (con `X-Widget-Key`) muestra el chat guardado y los seguimientos del lead. Los
+Depurar: `GET /api/seguimientos/<lead>?clave=<KOMMO_WEBHOOK_KEY>` muestra el chat guardado y los seguimientos del lead. Los
 logs llevan los prefijos `[mensajes]` y `[seguimientos]`. Sin `KOMMO_WEBHOOK_KEY` los dos webhooks responden 503.
 
 ### Video del cliente (Dropbox)

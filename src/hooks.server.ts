@@ -43,7 +43,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   const cors: Record<string, string> = origen && env.ORIGENES.includes(origen) ? { ...CORS, 'Access-Control-Allow-Origin': origen, Vary: 'Origin' } : {};
   if (event.request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
-  const libre = ruta === '/api/salud' || ruta === '/api/videos/webhook' || ruta === '/api/kommo/mensajes' || ruta === '/api/seguimientos' || ruta.startsWith('/api/admin/');
+  const libre = ruta === '/api/salud' || ruta === '/api/videos/webhook' || ruta === '/api/kommo/mensajes' || ruta === '/api/seguimientos' || ruta === '/api/seguimientos/[lead]' || ruta.startsWith('/api/admin/');
   const res = !libre && env.WIDGET_KEY && !iguales(event.request.headers.get('X-Widget-Key'), env.WIDGET_KEY)
     ? fallo('Clave del widget inválida', 401)
     : await resolve(event);

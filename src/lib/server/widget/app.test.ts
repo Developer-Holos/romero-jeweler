@@ -495,7 +495,7 @@ describe("seguimientos con IA", () => {
 		new URLSearchParams({ "message[add][0][id]": id, "message[add][0][entity_id]": String(lead), "message[add][0][entity_type]": "lead", "message[add][0][type]": tipo, "message[add][0][text]": texto, "message[add][0][created_at]": String(fecha) }).toString();
 	const enviar = (cuerpo: string, clave = K) => app.request(`/kommo/mensajes${clave}`, { method: "POST", headers: formulario, body: cuerpo });
 	const senal = (lead: number, dia = 3) => app.request(`/seguimientos${K}&dia=${dia}&lead=${lead}`, { method: "POST" });
-	const estado = async (lead: number) => (await (await app.request(`/seguimientos/${lead}`, { headers: W })).json()) as { chat: { mensajes: number; bytes: number; ultimos: { texto: string; cliente: boolean }[] }; seguimientos: { estado: string; intentos: number; error: string | null }[] };
+	const estado = async (lead: number) => (await (await app.request(`/seguimientos/${lead}${K}`)).json()) as { chat: { mensajes: number; bytes: number; ultimos: { texto: string; cliente: boolean }[] }; seguimientos: { estado: string; intentos: number; error: string | null }[] };
 	const esperar = async (listo: () => boolean) => {
 		for (let i = 0; i < 80 && !listo(); i++) await new Promise((ok) => setTimeout(ok, 50));
 		assert.ok(listo(), "no llegó a tiempo");
@@ -507,7 +507,7 @@ describe("seguimientos con IA", () => {
 		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "?clave=mala")).status, 401);
 		assert.equal((await enviar(mensaje("m0", 8001, "hola"), "")).status, 401);
 		assert.equal((await app.request(`/seguimientos?clave=mala&lead=8001`, { method: "POST" })).status, 401);
-		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar sí pide la clave del widget
+		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar también pide la clave (hay chats de clientes)
 	});
 
 	it("guarda los mensajes de los dos lados una sola vez y comprimidos", async () => {

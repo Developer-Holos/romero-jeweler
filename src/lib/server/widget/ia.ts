@@ -161,7 +161,7 @@ export async function redactarSeguimiento(mensajes: { fecha: number; cliente: bo
 		instructions: INSTRUCCIONES_SEGUIMIENTO,
 		input: JSON.stringify({ dia, mensajes: conversacion }),
 		text: { format: { type: "json_schema", name: "seguimiento", strict: true, schema: ESQUEMA_SEGUIMIENTO } },
-	});
+	}, { timeout: 60_000, maxRetries: 1 }); // mucho menos que los 10 min que dura el reclamo del seguimiento
 	const mensaje = (JSON.parse(res.output_text) as { mensaje?: string }).mensaje?.trim();
 	if (!mensaje) throw new Error("La IA devolvió un mensaje vacío");
 	return mensaje;
