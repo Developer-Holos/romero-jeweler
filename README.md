@@ -167,7 +167,7 @@ llamarlos:
 1. **Webhook de mensajes** (Kommo → app): `POST /api/kommo/mensajes`, con los eventos de mensaje entrante y saliente.
    Cada mensaje (del cliente y del asesor) se guarda en la tabla `conversaciones`: una fila por lead, JSON compacto
    comprimido con brotli, los últimos 200 mensajes, sin repetir ids.
-2. **Señal de seguimiento** (bot de Kommo → app): `POST /api/seguimientos?dia=3` (y otro webhook con `?dia=7`). El lead va en
+2. **Señal de seguimiento** (bot de Kommo → app): `POST /api/seguimientos?dia=3` (y otro webhook con `?dia=7`; solo se aceptan los días de `ENFOQUE_POR_DIA`). El lead va en
    el formulario que manda Kommo (`leads[add][0][id]`, `leads[status][0][id]`…). Responde 202 y sigue en segundo plano.
 3. La app arma el contexto y se lo pasa a OpenAI (el modelo de `/api/admin/ia`):
    - el **chat guardado** del lead;

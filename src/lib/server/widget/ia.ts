@@ -149,12 +149,12 @@ export type ContextoSeguimiento = {
 	previos: SeguimientoPrevio[]; // seguimientos automáticos que ya se enviaron a este lead
 };
 
-// Cómo cambia el mensaje según el día. Para otro día, se suma una línea; los que no estén usan el enfoque genérico.
+// Cómo cambia el mensaje según el día. Sus claves son los días que acepta el webhook (?dia=): para agregar un día, una línea.
 const ENFOQUE_POR_DIA: Record<number, string> = {
 	3: "Recordatorio amable: pregunta si tiene dudas o quiere avanzar.",
 	7: "Último seguimiento: ofrece ayuda o una llamada y deja la puerta abierta. No repitas lo que ya dijiste en el seguimiento anterior.",
 };
-const ENFOQUE_GENERICO = "Seguimiento amable que retome la conversación sin presionar.";
+export const DIAS_SEGUIMIENTO = Object.keys(ENFOQUE_POR_DIA).map(Number);
 
 const INSTRUCCIONES_SEGUIMIENTO = `Eres asesor de Romero Jeweler, una joyería de piezas a la medida en Miami.
 Recibes en JSON lo que se sabe de un cliente y escribes UN solo mensaje de seguimiento para enviarle por WhatsApp.
@@ -180,7 +180,7 @@ const ESQUEMA_SEGUIMIENTO = { type: "object", additionalProperties: false, requi
 // Solo van los últimos 60 mensajes del chat, para no gastar de más.
 const entradaSeguimiento = (c: ContextoSeguimiento) => ({
 	dia: c.dia,
-	enfoque: ENFOQUE_POR_DIA[c.dia] ?? ENFOQUE_GENERICO,
+	enfoque: ENFOQUE_POR_DIA[c.dia],
 	datos_del_lead: c.datos,
 	seguimientos_anteriores: c.previos,
 	mensajes: c.mensajes.slice(-60).map((m) => ({ fecha: new Date(m.fecha * 1000).toISOString().slice(0, 10), quien: m.cliente ? "cliente" : "asesor", texto: m.texto })),

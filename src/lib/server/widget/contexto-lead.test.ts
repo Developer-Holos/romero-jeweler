@@ -43,6 +43,16 @@ describe("datos relevantes del lead", () => {
 		assert.equal(datosRelevantes(lead(campos, 0)).length, 1);
 	});
 
+	it("no pasa las notas del asesor ni valores que no son texto", () => {
+		const datos = datosRelevantes(
+			lead([
+				{ nombre: "[1] Notes", tipo: "textarea", valores: ["no le digas que es para su aniversario"] },
+				{ nombre: "País", tipo: "smart_address", valores: [{ city: "Miami" }] },
+			]),
+		);
+		assert.deepEqual(datos, []);
+	});
+
 	it("escribe las fechas como AAAA-MM-DD", () => {
 		const datos = datosRelevantes(lead([{ nombre: "Plazo espera", tipo: "date", valores: [1762400000] }]));
 		assert.deepEqual(datos, [{ nombre: "Plazo espera", valor: "2025-11-06" }]);

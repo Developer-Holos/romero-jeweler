@@ -33,18 +33,20 @@ export async function registrarSeguimiento(db: Db, lead: number, dia: number) {
 	return { ...previo[0], nuevo: false };
 }
 
-// Los últimos seguimientos que ya se enviaron a este lead, del más antiguo al más reciente.
+// Los últimos seguimientos (de los últimos 30 días) que ya se enviaron a este lead, del más antiguo al más reciente.
 async function seguimientosPrevios(db: Db, lead: number): Promise<SeguimientoPrevio[]> {
 	const { rows } = await db.query<SeguimientoPrevio>(
 		`select dia, to_char(fecha, 'YYYY-MM-DD') as fecha, mensaje from seguimientos
-		 where lead_id = $1 and estado = 'enviado' and mensaje is not null order by id desc limit ${MAX_PREVIOS}`,
+		 where lead_id = $1 and estado = 'enviado' and mensaje is not null and creado > now() - interval '30 days' order by id desc limit ${MAX_PREVIOS}`,
 		[lead],
 	);
 	return rows.reverse();
 }
 
 async function armarContexto(db: Db, lead: number, dia: number): Promise<ContextoSeguimiento> {
-	const [conversacion, datosLead, previos] = await Promise.all([leerConversacion(db, lead), leerLead(lead), seguimientosPrevios(db, lead)]);
+	// Los campos del lead son un extra: si Kommo no los da, el seguimiento sale igual con el chat.
+	const sinCampos = (e: unknown) => (console.warn(`[seguimientos] lead ${lead}: no se pudieron leer los campos, sigue sin ellos:`, e), { precio: 0, campos: [] });
+	const [conversacion, datosLead, previos] = await Promise.all([leerConversacion(db, lead), leerLead(lead).catch(sinCampos), seguimientosPrevios(db, lead)]);
 	return { dia, datos: datosRelevantes(datosLead), mensajes: conversacion.mensajes, previos };
 }
 
@@ -69,7 +71,7 @@ export async function procesarSeguimiento(db: Db, id: number, config: ConfigSegu
 			const contexto = await armarContexto(db, lead, fila.dia);
 			mensaje = await redactarSeguimiento(contexto, config.modelo, config.apiKey);
 			await db.query("update seguimientos set mensaje = $2 where id = $1", [id, mensaje]);
-			console.log(`[seguimientos] ${etiqueta}: mensaje generado (${contexto.mensajes.length} mensajes del chat, ${contexto.datos.length} datos del lead, ${contexto.previos.length} seguimientos previos)`);
+			console.log(`[seguimientos] ${etiqueta}: mensaje generado (${contexto.mensajes.length} mensajes del chat, ${contexto.previos.length} seguimientos previos, campos del lead: ${contexto.datos.map((d) => d.nombre).join(", ") || "ninguno"})`);
 		}
 		await guardarTexto(lead, config.campo, mensaje);
 		await lanzarBot(config.bot, lead);

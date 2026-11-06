@@ -305,6 +305,10 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
   contra la cuenta el 2026-11-06: Servicio, Tipo de anillo, Rango de precios, Plazo espera, País y los `[N] …` de cada anillo)
   más el precio como presupuesto, y los seguimientos anteriores ya enviados para no repetirse. El día (3 o 7) viene en la
   URL del webhook (`?dia=`).
+- **Límites**: `?dia=` solo acepta los días de `ENFOQUE_POR_DIA` (3 y 7). No se pasan las notas del asesor (`[N] Notes`) a la IA
+  (podrían terminar en el mensaje al cliente). Si Kommo no da los campos del lead, el seguimiento sale solo con el chat. Los
+  seguimientos previos son los de los últimos 30 días. El endpoint de depuración (chats de clientes) pide `X-Widget-Key`, pero
+  queda abierto si `WIDGET_KEY` no está definida.
 - **Sin decidir**: `[SEG] Plan` (textarea) y `[SEG] Contador - Seguimiento ventas` existen en el lead; podrían sumarse a la
   lista si dicen algo útil para el seguimiento.
 - **Reintentos**: 5 intentos, con repaso cada 5 min durante 48 h, y una nota en el lead al rendirse.

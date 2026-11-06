@@ -69,6 +69,9 @@ const ESQUEMA = `
 		creado timestamptz not null default now(),
 		actualizado timestamptz not null default now()
 	);
+	-- Filas de antes de que el día fuera obligatorio: se les da el día 0 y las pendientes no se reintentan.
+	update seguimientos set dia = 0, estado = case when estado = 'pendiente' then 'fallido' else estado end where dia is null;
+	alter table seguimientos alter column dia set not null;
 	alter table seguimientos drop constraint if exists seguimientos_lead_id_fecha_key;
 	create unique index if not exists seguimientos_lead_dia_fecha on seguimientos (lead_id, dia, fecha);
 	do $$ begin

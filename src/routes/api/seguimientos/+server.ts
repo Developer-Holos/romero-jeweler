@@ -2,13 +2,15 @@
 // URL (?dia=3, ?dia=7). Responde enseguida y genera el mensaje después (OpenAI tarda más de lo que espera Kommo). Una
 // señal repetida el mismo día no envía de nuevo, pero sí reintenta un seguimiento que quedó pendiente.
 import { json } from "@sveltejs/kit";
+import { DIAS_SEGUIMIENTO } from "#lib/server/widget/ia.ts";
 import { db, fallo, seguimientoConfig } from "#lib/server/widget/servicio.ts";
 import { leadDeLaSenal, procesarSeguimiento, registrarSeguimiento } from "#lib/server/widget/seguimientos.ts";
 import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ request, url }) => {
 	const dia = Number(url.searchParams.get("dia"));
-	if (!Number.isInteger(dia) || dia <= 0) return fallo("Falta el día del seguimiento (?dia=3)", 400);
+	// Solo los días con enfoque: así nadie crea seguimientos (y gasto de OpenAI) con días inventados.
+	if (!DIAS_SEGUIMIENTO.includes(dia)) return fallo(`?dia= debe ser uno de: ${DIAS_SEGUIMIENTO.join(", ")}`, 400);
 	const lead = leadDeLaSenal(await request.text());
 	if (!lead) return fallo("El webhook no trae el lead (leads[…][0][id])", 400);
 	const base = await db();

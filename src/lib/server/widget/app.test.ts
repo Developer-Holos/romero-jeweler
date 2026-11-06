@@ -24,6 +24,7 @@ const kommo = {
 	adjuntos: new Map<number, string[]>(),
 	notas: [] as { entity_id: number; params: { text: string } }[],
 	bots: [] as { bot_id: number; entity_id: number }[],
+	fallarLead: 0, // cuántas lecturas de un lead responden 500 antes de funcionar
 	fallarBot: 0, // cuántos lanzamientos de bot responden 500 antes de funcionar
 	grupos: [] as { id: string; name: string }[],
 	campos: [{ id: 777, name: "Invoice", type: "file", group_id: null as string | null, sort: 1 }],
@@ -124,7 +125,7 @@ const falso = createServer(async (req, res) => {
 		return json({ _embedded: { custom_fields: nuevos } });
 	}
 	const lead = url.pathname.match(/^\/api\/v4\/leads\/(\d+)(\/files)?$/);
-	if (lead && !lead[2] && req.method === "GET") return json({ id: +lead[1], price: kommo.precios.get(+lead[1]) ?? 0, custom_fields_values: kommo.lead.get(+lead[1]) ?? null });
+	if (lead && !lead[2] && req.method === "GET") return kommo.fallarLead > 0 ? (kommo.fallarLead--, json({ error: "caído" }, 500)) : json({ id: +lead[1], price: kommo.precios.get(+lead[1]) ?? 0, custom_fields_values: kommo.lead.get(+lead[1]) ?? null });
 	if (lead && !lead[2] && req.method === "PATCH") {
 		const { custom_fields_values } = JSON.parse((await leer(req)).toString()) as { custom_fields_values: ValorCampo[] };
 		const valores = (kommo.lead.get(+lead[1]) ?? []).filter((v) => !custom_fields_values.some((n) => n.field_id === v.field_id));
@@ -533,6 +534,8 @@ describe("seguimientos con IA", () => {
 
 	it("la señal pide el día en la URL y el lead en el formulario", async () => {
 		assert.equal((await app.request("/seguimientos", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
+		assert.equal((await app.request("/seguimientos?dia=4", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400); // sin enfoque
+		assert.equal((await app.request("/seguimientos?dia=99999999999", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
 		assert.equal((await app.request("/seguimientos?dia=hoy", { method: "POST", headers: formulario, body: "leads[status][0][id]=8001" })).status, 400);
 		assert.equal((await app.request("/seguimientos?dia=3", { method: "POST", headers: formulario, body: "nada=1" })).status, 400);
 		assert.equal((await app.request("/seguimientos/8001")).status, 401); // depurar pide la clave del widget
@@ -567,6 +570,16 @@ describe("seguimientos con IA", () => {
 		await esperar(() => mensajesDeBot(8001).length === 2);
 		assert.deepEqual(entradaIa(antes).seguimientos_anteriores.map((p) => [p.dia, p.mensaje]), [[3, "Hola, ¿sigue interesado en el anillo?"]]);
 		assert.equal(entradaIa(antes).dia, 7);
+	});
+
+	it("si Kommo no da los campos del lead, el seguimiento sale igual con el chat", async () => {
+		await enviar(mensaje("s1", 8009, "Quisiera cotizar un anillo"));
+		kommo.fallarLead = 1;
+		const antes = openai.pedidos.length;
+		await senal(8009);
+		await esperar(() => mensajesDeBot(8009).length === 1);
+		assert.deepEqual(entradaIa(antes).datos_del_lead, []);
+		assert.ok(entradaIa(antes).mensajes.some((m) => m.texto.includes("cotizar")));
 	});
 
 	it("si OpenAI falla queda pendiente y la siguiente señal lo reintenta", async () => {

@@ -29,6 +29,6 @@ export const variables = defineEnvVars({
   KOMMO_BOT_VIDEO: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del Salesbot que manda el link del video. Sin él, solo se guarda el link y una nota' },
 
   // Seguimientos con IA (/api/kommo/mensajes y /api/seguimientos). Necesitan OPENAI_API_KEY.
-  KOMMO_CAMPO_SEGUIMIENTO: { schema: (v) => Number(opcional(v)) || 463316, description: 'Id del campo "[V] Mensaje Seguimiento" del lead' },
+  KOMMO_CAMPO_SEGUIMIENTO: { schema: (v) => Number(opcional(v)) || 463316, description: 'Id del campo "[V] - Mensaje Seguimiento" del lead' },
   KOMMO_BOT_SEGUIMIENTO: { schema: (v) => Number(opcional(v)) || 10394, description: 'Id del Salesbot que envía el mensaje de seguimiento' }
 });

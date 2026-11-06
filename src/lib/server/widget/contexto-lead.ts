@@ -1,6 +1,7 @@
 // Qué datos del lead (de sus campos en Kommo) se le pasan a la IA para escribir el seguimiento.
 import type { LeadKommo } from "./kommo.ts";
 
+// Las notas del asesor ("[N] Notes") no van: son internas y podrían terminar en el mensaje al cliente.
 // Para que la IA vea un campo más, agrega su nombre aquí tal como se llama en Kommo. No importan las mayúsculas, los
 // acentos ni el prefijo "[N] " de los campos por anillo ("[2] Ring Type" cuenta como "Ring Type").
 export const CAMPOS_RELEVANTES = [
@@ -18,7 +19,6 @@ export const CAMPOS_RELEVANTES = [
 	"Piedra",
 	"Talla",
 	"Size",
-	"Notes",
 ];
 
 export type DatoLead = { nombre: string; valor: string };
@@ -37,7 +37,11 @@ const TIPOS_SIN_TEXTO = new Set(["checkbox", "file"]);
 const TIPOS_FECHA = new Set(["date", "date_time", "birthday"]);
 
 // Kommo guarda las fechas como segundos desde 1970.
-const comoTexto = (tipo: string, valor: unknown) => (TIPOS_FECHA.has(tipo) && typeof valor === "number" ? new Date(valor * 1000).toISOString().slice(0, 10) : String(valor ?? "").trim());
+// Los valores que no son texto, número o fecha (direcciones, listas encadenadas…) se descartan.
+const comoTexto = (tipo: string, valor: unknown) => {
+	if (TIPOS_FECHA.has(tipo) && typeof valor === "number") return new Date(valor * 1000).toISOString().slice(0, 10);
+	return typeof valor === "string" || typeof valor === "number" ? String(valor).trim() : "";
+};
 
 export function datosRelevantes(lead: LeadKommo): DatoLead[] {
 	const datos: DatoLead[] = [];
