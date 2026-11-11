@@ -8,14 +8,14 @@ import { leadDeLaSenal, procesarSeguimiento, registrarSeguimiento } from "#lib/s
 import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async ({ request, url }) => {
-	const dia = Number(url.searchParams.get("dia"));
-	// Solo los días con enfoque: así nadie crea seguimientos (y gasto de OpenAI) con días inventados.
-	if (!DIAS_SEGUIMIENTO.includes(dia)) return fallo(`?dia= debe ser uno de: ${DIAS_SEGUIMIENTO.join(", ")}`, 400);
-	const lead = leadDeLaSenal(await request.text());
-	if (!lead) return fallo("El webhook no trae el lead (leads[…][0][id])", 400);
-	const base = await db();
-	const { id, estado, nuevo } = await registrarSeguimiento(base, lead, dia);
-	console.log(`[seguimientos] señal: lead ${lead} día ${dia} → ${nuevo ? "nuevo" : `ya existía (${estado})`}`);
-	if (estado === "pendiente") procesarSeguimiento(base, id, await seguimientoConfig()).catch((e) => console.error(`[seguimientos] lead ${lead}:`, e));
-	return json({ id, estado }, { status: 202 });
+  const dia = Number(url.searchParams.get("dia"));
+  // Solo los días con enfoque: así nadie crea seguimientos (y gasto de OpenAI) con días inventados.
+  if (!DIAS_SEGUIMIENTO.includes(dia)) return fallo(`?dia= debe ser uno de: ${DIAS_SEGUIMIENTO.join(", ")}`, 400);
+  const lead = leadDeLaSenal(await request.text());
+  if (!lead) return fallo("El webhook no trae el lead (leads[…][0][id])", 400);
+  const base = await db();
+  const { id, estado, nuevo } = await registrarSeguimiento(base, lead, dia);
+  console.log(`[seguimientos] señal: lead ${lead} día ${dia} → ${nuevo ? "nuevo" : `ya existía (${estado})`}`);
+  if ((estado === "pendiente") || estado === "enviado") procesarSeguimiento(base, id, await seguimientoConfig()).catch((e) => console.error(`[seguimientos] lead ${lead}:`, e));
+  return json({ id, estado }, { status: 202 });
 };
