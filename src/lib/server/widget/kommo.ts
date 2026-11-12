@@ -222,3 +222,31 @@ export async function agregarNota(leadId: number, texto: string) {
 export async function lanzarBot(botId: number, leadId: number) {
 	await api("/api/v2/salesbot/run", json({ method: "POST", cuerpo: [{ bot_id: botId, entity_type: 2, entity_id: leadId }] }));
 }
+
+// ─── Panel de entregas (src/lib/server/widget/entregas.ts) ──────────────────
+export type LeadResumen = { id: number; nombre: string; etapa: number; embudo: number; responsable: number; valores: { campo: number; nombre: string; valores: unknown[] }[] };
+
+// Todos los leads (hasta 20 páginas de 250, el tope de `todos`) con sus campos.
+export async function leerLeads(): Promise<LeadResumen[]> {
+	const leads = await todos<{ id: number; name?: string; status_id?: number; pipeline_id?: number; responsible_user_id?: number; custom_fields_values?: { field_id: number; field_name?: string; values?: { value?: unknown }[] }[] | null }>("/api/v4/leads", "leads");
+	return leads.map((l) => ({
+		id: l.id,
+		nombre: l.name ?? `Lead #${l.id}`,
+		etapa: l.status_id ?? 0,
+		embudo: l.pipeline_id ?? 0,
+		responsable: l.responsible_user_id ?? 0,
+		valores: (l.custom_fields_values ?? []).map((c) => ({ campo: c.field_id, nombre: c.field_name ?? "", valores: (c.values ?? []).map((v) => v.value) })),
+	}));
+}
+
+// Nombre de cada etapa (por id), de todos los embudos.
+export async function leerEtapas(): Promise<Map<number, string>> {
+	const embudos = await todos<{ name: string; _embedded?: { statuses?: { id: number; name: string }[] } }>("/api/v4/leads/pipelines", "pipelines");
+	return new Map(embudos.flatMap((e) => (e._embedded?.statuses ?? []).map((s): [number, string] => [s.id, embudos.length > 1 ? `${e.name} · ${s.name}` : s.name])));
+}
+
+// Nombre de cada usuario (asesor) de la cuenta, por id.
+export async function leerUsuarios(): Promise<Map<number, string>> {
+	const usuarios = await todos<{ id: number; name: string }>("/api/v4/users", "users");
+	return new Map(usuarios.map((u) => [u.id, u.name]));
+}

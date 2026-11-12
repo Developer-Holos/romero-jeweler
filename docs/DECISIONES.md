@@ -316,6 +316,22 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 - **Pendiente**: ajustar el prompt (`INSTRUCCIONES_SEGUIMIENTO` en `ia.ts`) con ejemplos reales de Romero, y decidir qué hacer
   con el doble envío si el bot se ejecuta pero Kommo responde con error.
 
+## Panel de entregas (2026-11-12)
+
+- **Qué**: `/panel/entregas` para el panel de control personalizado de Kommo (un iframe con una URL), con las piezas por fecha
+  de entrega estimada (campo 544152).
+- **Privada**: clave en la URL (`PANEL_KEY`; el iframe no puede mandar headers), `frame-ancestors` con `ORIGENES` y rechazo de
+  `Sec-Fetch-Dest: document`. Lo del navegador impide abrirla directo en una pestaña, pero quien tenga la URL con la clave
+  puede leerla con `curl`: la clave es lo que de verdad la protege. `Referrer-Policy: no-referrer` para que no se filtre.
+- **Datos**: se recorren todos los leads (hasta 5000, el tope de `todos` en `kommo.ts`) y se filtra en memoria; la API v4 no
+  filtra bien por campos personalizados. Se recuerda 2 minutos.
+- **Solo Producción** (`KOMMO_EMBUDO_ENTREGAS`): el campo se llama "Fecha evento" y otros embudos podrían usarlo para la fecha
+  de la boda o del evento.
+- **En riesgo**: entrega en 14 días o menos y todavía en una etapa anterior a Fundición. Regla inicial, a confirmar con el taller.
+- **A verificar**: en la cuenta real el campo 544152 se llama **"Fecha evento"**; confirmar que es la entrega estimada. El
+  token del `.env` local solo ve 1 lead (sin el campo), así que el panel no se probó con datos reales: revisar que el token
+  de Railway vea todos los leads. Falta confirmar si Kommo agrega parámetros a la URL del iframe o lo pone en `sandbox`.
+
 ## Video del cliente (Dropbox)
 
 **Pedido (2026-11-03):** detectar cuándo el video del cliente está terminado en Dropbox y automatizar en Kommo el

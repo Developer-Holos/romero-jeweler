@@ -112,6 +112,7 @@ const falso = createServer(async (req, res) => {
 		res.writeHead(200, { "Content-Type": a.tipo });
 		return res.end(a.datos);
 	}
+	if (url.pathname === "/api/v4/leads/pipelines") return json({ _embedded: { pipelines: [{ name: "Producción", _embedded: { statuses: [{ id: 1, name: "Diseño" }] } }] } });
 	if (url.pathname === "/api/v4/leads/custom_fields/groups" && req.method === "GET") return json({ _embedded: { custom_field_groups: kommo.grupos } });
 	if (url.pathname === "/api/v4/leads/custom_fields/groups" && req.method === "POST") {
 		const nuevos = JSON.parse((await leer(req)).toString()).map((g: { name: string }) => ({ id: `leads_${kommo.grupos.length + 1}`, name: g.name }));
@@ -145,7 +146,7 @@ const falso = createServer(async (req, res) => {
 	if (url.pathname === "/api/v4/leads" && req.method === "GET") {
 		// query: busca el texto en cualquier campo del lead (como Kommo).
 		const q = url.searchParams.get("query") ?? "";
-		const leads = [...kommo.lead].filter(([, vs]) => vs.some((v) => v.values.some((x) => String(x.value).includes(q)))).map(([id, vs]) => ({ id, custom_fields_values: vs }));
+		const leads = [...kommo.lead].filter(([, vs]) => vs.some((v) => v.values.some((x) => String(x.value).includes(q)))).map(([id, vs]) => ({ id, pipeline_id: 14639515, custom_fields_values: vs }));
 		if (!leads.length || url.searchParams.get("page") !== "1") return (res.writeHead(204), res.end());
 		return json({ _embedded: { leads } });
 	}
@@ -191,6 +192,7 @@ before(async () => {
 			DROPBOX_RAIZ: "/Ordenes",
 			DROPBOX_API_URL: `http://127.0.0.1:${(falso.address() as { port: number }).port}`,
 			KOMMO_BOT_VIDEO: "4242",
+			PANEL_KEY: "clave-panel",
 		},
 		stdio: ["ignore", "pipe", "inherit"],
 	});
@@ -227,6 +229,31 @@ describe("claves y CORS", () => {
 		assert.equal(res.headers.get("Access-Control-Allow-Origin"), "https://romerojeweler.kommo.com");
 		const otro = await app.request("/plantilla", { headers: { ...W, Origin: "https://otro.com" } });
 		assert.equal(otro.headers.get("Access-Control-Allow-Origin"), null);
+	});
+});
+
+describe("panel de entregas", () => {
+	const panel = (consulta: string, destino?: string) => fetch(`http://127.0.0.1:${PUERTO}/panel/entregas${consulta}`, { headers: destino ? { "Sec-Fetch-Dest": destino } : {} });
+
+	it("sin la clave no existe, y no se abre directo en una pestaña", async () => {
+		assert.equal((await panel("")).status, 404);
+		assert.equal((await panel("?clave=otra", "iframe")).status, 404);
+		assert.equal((await panel("?clave=clave-panel", "document")).status, 403);
+	});
+
+	it("dentro del iframe de Kommo muestra las piezas con fecha próxima", async () => {
+		const enTresDias = Math.floor(Date.now() / 1000) + 3 * 86_400;
+		kommo.lead.set(990001, [{ field_id: 544152, values: [{ value: enTresDias as unknown as Record<string, unknown> }] }]);
+		const res = await panel("?clave=clave-panel", "iframe");
+		assert.equal(res.status, 200);
+		assert.match(res.headers.get("Content-Security-Policy") ?? "", /frame-ancestors https:\/\/romerojeweler\.kommo\.com/);
+		assert.equal(res.headers.get("Referrer-Policy"), "no-referrer");
+		const html = await res.text();
+		assert.match(html, /Lead #990001/);
+		assert.match(html, /En (2|3) días/);
+		// La página se recarga sola (fetch: Sec-Fetch-Dest "empty"), con la misma clave.
+		const datos = await fetch(`http://127.0.0.1:${PUERTO}/panel/entregas/__data.json?clave=clave-panel`, { headers: { "Sec-Fetch-Dest": "empty" } });
+		assert.equal(datos.status, 200);
 	});
 });
 

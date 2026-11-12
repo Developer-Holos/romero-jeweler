@@ -14,6 +14,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 | Widget de invoice | `widget/` + `src/lib/invoice` + `src/widget` | Widget de Kommo: generador de invoices y de órdenes de producción (tarjeta del lead) y editor del diseño (ajustes avanzados) |
 | API del widget | `src/routes/api` + `src/lib/server/widget` | Rutas de SvelteKit que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
 | Seguimientos con IA | `src/routes/api/kommo`, `src/routes/api/seguimientos` + `mensajes.ts`, `seguimientos.ts` | Webhooks de Kommo: guarda el chat comprimido y, con la señal del bot (día 3 y 7), pide a OpenAI el mensaje, lo deja en "[V] - Mensaje Seguimiento" y lanza el Bot 10394 |
+| Panel de entregas | `src/routes/panel/entregas` + `entregas.ts` | Página para el panel de control de Kommo (iframe): piezas por fecha de entrega estimada (campo 544152), con clave `?clave=` (`PANEL_KEY`) |
 | Video del cliente | `src/routes/api/videos` + `src/lib/server/widget/dropbox.ts`, `videos.ts` | Webhook de Dropbox: cuando aparece `<orden>/<orden>_completo.mp4`, guarda el link en el lead con ese "Order #" y lanza el Salesbot que se lo manda |
 
 ## Arquitectura del widget de invoice
@@ -128,6 +129,8 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
 - `WIDGET_KEY` es opcional: sin ella la API acepta cualquier pedido que llegue a su URL; con ella exige el
   header `X-Widget-Key`. Los navegadores solo pueden llamarlo desde `ORIGENES` (agregar el dominio de Kommo).
   `/admin/*` usa otra clave (`ADMIN_KEY`), que nunca va al widget, y `/api/videos/webhook` va firmado por Dropbox y `/api/kommo/mensajes` y `/api/seguimientos` (webhooks de Kommo, sin clave a propósito) tampoco piden `X-Widget-Key` (`libre` en `hooks.server.ts`).
+  `/panel/*` (panel de control de Kommo) no usa `X-Widget-Key`: pide `?clave=` (`PANEL_KEY`; sin ella, 404), solo se muestra en un
+  iframe de `ORIGENES` y rechaza abrirse directo en una pestaña (`panel` en `hooks.server.ts`).
   `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
   se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
 - **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El

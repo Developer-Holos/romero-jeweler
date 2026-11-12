@@ -2,6 +2,7 @@
 // WIDGET_KEY está definida, el header X-Widget-Key (menos /api/salud, /api/admin, que tiene su propia clave, el
 // webhook de Dropbox, que va firmado, y los de Kommo —mensajes y señal de seguimiento—, que no pueden mandar el header).
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
+import { dev } from '$app/env';
 import { dropboxConfigurado } from '#lib/server/widget/dropbox.ts';
 import { db, env, fallo, iguales, seguimientoConfig } from '#lib/server/widget/servicio.ts';
 import { iniciarSeguimientos } from '#lib/server/widget/seguimientos.ts';
@@ -31,10 +32,28 @@ const CORS = {
   'Access-Control-Max-Age': '600'
 };
 
+// /panel: páginas para el panel de control de Kommo (un iframe con la URL que se configura allí). Privadas: piden
+// `?clave=` (PANEL_KEY; sin ella, 404 como si no existieran), el navegador solo las muestra dentro de un iframe de la
+// cuenta de Kommo (frame-ancestors) y, si se abren directo en una pestaña (Sec-Fetch-Dest: document), se rechazan.
+const panel: Handle = async ({ event, resolve }) => {
+  if (!env.PANEL_KEY || !iguales(event.url.searchParams.get('clave'), env.PANEL_KEY)) return new Response('Not found', { status: 404 });
+  const destino = event.request.headers.get('Sec-Fetch-Dest');
+  // `document` es abrirla en una pestaña; `iframe` (Kommo) y `empty` (la recarga de datos de la página) pasan. En `vite dev`
+  // se deja abrir directo, para trabajar en la página.
+  if (!dev && destino === 'document') return new Response('Esta página solo se ve desde el panel de control de Kommo.', { status: 403 });
+  const res = await resolve(event);
+  res.headers.set('Content-Security-Policy', `frame-ancestors ${env.ORIGENES.join(' ')}`);
+  res.headers.set('Referrer-Policy', 'no-referrer'); // la clave va en la URL
+  res.headers.set('X-Robots-Tag', 'noindex');
+  res.headers.set('Cache-Control', 'private, no-store');
+  return res;
+};
+
 export const handle: Handle = async ({ event, resolve }) => {
   // Se decide con la ruta que SvelteKit reconoció (ya decodificada), no con la URL tal como llega:
   // `/%61pi/borradores/1` llega al handler de /api/borradores/[lead] y tiene que pasar por la misma guardia.
   const ruta: string = event.route.id ?? '';
+  if (ruta.startsWith('/panel/')) return panel({ event, resolve });
   if (!ruta.startsWith('/api/')) return resolve(event);
 
   const origen = event.request.headers.get('Origin');
