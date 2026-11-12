@@ -34,3 +34,10 @@ export const PRODUCCION: Pipeline = {
     { name: "Ventas Perdidos", id: 143 },
   ]
 }
+
+/** Id de una etapa de PRODUCCION por su nombre. Si alguien la renombra arriba, falla con un mensaje claro al cargar. */
+export function idEtapa(nombre: string): number {
+  const stage = PRODUCCION.stages.find((s) => s.name === nombre)
+  if (!stage) throw new Error(`No existe la etapa "${nombre}" en PRODUCCION (src/lib/kommo/pipeline.ts)`)
+  return stage.id
+}

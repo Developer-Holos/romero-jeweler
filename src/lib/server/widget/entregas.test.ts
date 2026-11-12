@@ -41,7 +41,7 @@ describe("resumen de entregas", () => {
 		assert.equal(r.enCurso, 7);
 		assert.equal(r.rangos[0].piezas[0].etapa, "Diseño");
 		assert.equal(r.rangos[0].piezas[0].fecha, "2026-11-09");
-		assert.equal(r.rangos[0].piezas[0].responsable, "Carolina");
+		assert.equal(r.rangos[0].piezas[0].asesor, "Carolina");
 	});
 
 	it("separa las abiertas sin fecha y deja fuera las cerradas", () => {
@@ -84,7 +84,7 @@ describe("resumen de entregas", () => {
 	it("identifica al asesor por id, aunque dos se llamen igual", () => {
 		const leads = [lead(1, enDias(3)), { ...lead(2, enDias(3)), responsable: 6 }];
 		const r = resumirEntregas(leads, { ...OPC, usuarios: new Map([[5, "Ana"], [6, "Ana"]]) }, AHORA);
-		assert.deepEqual(r.rangos[1].piezas.map((p) => [p.asesor, p.responsable]), [[5, "Ana"], [6, "Ana"]]);
+		assert.deepEqual(r.rangos[1].piezas.map((p) => [p.asesorId, p.asesor]), [[5, "Ana"], [6, "Ana"]]);
 	});
 
 	it("cada rango trae su nombre y sus límites, para que la página no los repita", () => {

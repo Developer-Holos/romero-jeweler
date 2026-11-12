@@ -106,6 +106,8 @@ type Campo = { id: number; name: string; type: string; group_id: string | null }
 type Grupo = { id: string; name: string };
 
 const MAX_PAGINAS = 20;
+// Si un listado llega a este número, puede haber más que no se leyeron.
+export const MAX_RESULTADOS = MAX_PAGINAS * 250;
 async function todos<T>(ruta: string, clave: string): Promise<T[]> {
 	const items: T[] = [];
 	for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {

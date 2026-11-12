@@ -1,18 +1,17 @@
 // Datos de ejemplo para ver el panel de entregas sin Kommo (`vite dev` + `?demo`). Fijos: siempre los mismos leads,
 // con fechas relativas a hoy, para que el panel se vea igual cualquier día.
-import { PRODUCCION } from "../../kommo/pipeline.ts";
+import { PRODUCCION, idEtapa } from "#lib/kommo/pipeline.ts";
 import type { LeadResumen } from "./kommo.ts";
 
 const CAMPO_ORDEN = 9001;
-// Las etapas reales de Producción.
+// Con los ids reales, para que las reglas que dependen de la etapa (riesgo, cerradas) actúen igual que con Kommo.
 export const ETAPAS_DEMO = new Map(PRODUCCION.stages.map((s) => [s.id, s.name]));
-const etapa = (nombre: string) => PRODUCCION.stages.find((s) => s.name === nombre)!.id;
 export const USUARIOS_DEMO = new Map([
 	[1, "Carolina Romero"],
 	[2, "Javier Méndez"],
 	[3, "Lucía Fernández"],
 ]);
-const [DISENO, APROBACION, ESPERA, IMPRESION, FUNDICION, METAL, ENGASTE, ACABADO, CALIDAD, LISTO] = ["Diseño", "Aprobación de diseño", "En espera", "Impresión 3D", "Fundición", "Trabajo en metal", "Engaste", "Acabado", "Control de calidad", "Listo para entrega"].map(etapa);
+const [DISENO, APROBACION, ESPERA, IMPRESION, FUNDICION, METAL, ENGASTE, ACABADO, CALIDAD, LISTO] = ["Diseño", "Aprobación de diseño", "En espera", "Impresión 3D", "Fundición", "Trabajo en metal", "Engaste", "Acabado", "Control de calidad", "Listo para entrega"].map(idEtapa);
 const VENTAS = 14630839; // otro embudo, que también usa el campo de la fecha
 
 // [días hasta la entrega (null: sin fecha), nombre, etapa, Order #]

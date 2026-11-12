@@ -14,17 +14,20 @@
 	const VISTA_ATRAS = 30;
 	const VISTA_DESPUES = 90;
 	const PILA = 5; // rombos apilados como máximo; el resto se cuenta ("+3")
-	const ROMBO = 14; // px que ocupa un rombo girado, para apilar los que se tocarían
+	const ROMBO = 16; // px que ocupa un rombo girado con su borde, para apilar los que se tocarían
 
 	// Filtro por asesor (por id: dos asesores pueden llamarse igual). Todo sale de las piezas filtradas.
 	const todas = $derived([...resumen.rangos.flatMap((x) => x.piezas), ...resumen.sinFecha]);
 	const asesores = $derived(
-		[...new Map(todas.filter((p) => p.responsable).map((p) => [p.asesor, p.responsable])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
+		[...new Map(todas.filter((p) => p.asesor).map((p) => [p.asesorId, p.asesor])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
 	);
 	let elegidoAsesor = $state(0);
-	// Si el asesor elegido ya no tiene piezas tras una recarga, se vuelve a "Todos".
+	// Si el asesor elegido ya no tiene piezas tras una recarga, se vuelve a "Todos" (y no reaparece solo).
+	$effect(() => {
+		if (elegidoAsesor && !asesores.some(([id]) => id === elegidoAsesor)) elegidoAsesor = 0;
+	});
 	const asesor = $derived(asesores.some(([id]) => id === elegidoAsesor) ? elegidoAsesor : 0);
-	const delAsesor = (ps: Pieza[]) => (asesor ? ps.filter((p) => p.asesor === asesor) : ps);
+	const delAsesor = (ps: Pieza[]) => (asesor ? ps.filter((p) => p.asesorId === asesor) : ps);
 	const rangos = $derived(resumen.rangos.map((x) => ({ ...x, piezas: delAsesor(x.piezas) })));
 	const sinFecha = $derived(delAsesor(resumen.sinFecha));
 	const enRiesgo = $derived(rangos.flatMap((x) => x.piezas).filter((p) => p.riesgo));
@@ -33,7 +36,7 @@
 
 	let ancho = $state(680);
 	const regla = $derived.by(() => {
-		const paso = Math.max(1.2, (ROMBO / ancho) * 100); // en % del ancho
+		const paso = Math.max(1.2, (ROMBO / Math.max(ancho, 1)) * 100); // en % del ancho
 		const pila = new Map<number, number>();
 		const gemas: { p: Pieza; x: number; alto: number; clave: string }[] = [];
 		rangos.forEach((rango, i) =>
@@ -78,11 +81,12 @@
 		new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short', ...(dia.slice(0, 4) !== anio && { year: 'numeric' }), timeZone: 'UTC' }).format(new Date(`${dia}T00:00:00Z`));
 	const cuando = (dias: number) => (dias === 0 ? 'Hoy' : dias === 1 ? 'Mañana' : dias === -1 ? 'Ayer' : dias > 0 ? `En ${dias} días` : `Hace ${-dias} días`);
 	const piezas = (n: number) => `${n} ${n === 1 ? 'pieza' : 'piezas'}`;
+	const lista = (xs: string[]) => new Intl.ListFormat('es', { type: 'disjunction' }).format(xs.map((x) => x[0].toLowerCase() + x.slice(1)));
 
 	// Se recarga sola cada minuto (el servidor recuerda Kommo 2 minutos: los datos tienen a lo sumo 3) y dice de cuándo son.
 	let ahora = $state(Date.now());
 	let sinMovimiento = $state(false);
-	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }).format(resumen.actualizado));
+	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: resumen.zona }).format(resumen.actualizado));
 	const hace = $derived(Math.max(0, Math.floor((ahora - resumen.actualizado) / 60_000)));
 	onMount(() => {
 		sinMovimiento = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -116,19 +120,23 @@
 					</select>
 				</label>
 			{/if}
-			<p class="estado" title="Se actualiza sola cada 2 minutos">
+			<p class="estado" title="Se actualiza sola cada minuto">
 				<span class="pulso" aria-hidden="true"></span>
 				Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}
 			</p>
 		</div>
 	</header>
 
+	{#if data.incompleto}
+		<p class="incompleto">Hay más piezas de las que el panel puede leer de Kommo: los números pueden quedarse cortos.</p>
+	{/if}
+
 	{#if enRiesgo.length || sinFecha.length}
 		<div class="avisos">
 			{#if enRiesgo.length}
 				<button type="button" class="aviso riesgo" aria-pressed={seleccion === 'riesgo'} onclick={() => (elegido = 'riesgo')}>
 					<span class="cifra-aviso">{enRiesgo.length}</span>
-					<span><strong>En riesgo</strong> · se entregan en {resumen.diasRiesgo} días o menos y siguen en diseño, aprobación, espera o impresión</span>
+					<span><strong>En riesgo</strong> · se entregan en {resumen.diasRiesgo} días o menos y siguen en {lista(resumen.etapasRiesgo)}</span>
 				</button>
 			{/if}
 			{#if sinFecha.length}
@@ -141,7 +149,7 @@
 	{/if}
 
 	<section class="calibre" aria-label="Piezas por fecha de entrega">
-		<div class="regla" bind:clientWidth={ancho}>
+		<div class="regla" style="--rangos: {rangos.length}" bind:clientWidth={ancho}>
 			{#each marcas as m, i (m)}
 				<span class="marca" class:hoy={i === 0} style="left: {((i + 1) / rangos.length) * 100}%">
 					<span class="etiqueta">{m}</span>
@@ -195,7 +203,7 @@
 								{#if p.orden}<span class="orden">#{p.orden.replace(/^#/, '')}</span>{/if}
 								{#if p.riesgo && seleccion !== 'riesgo'}<span class="etiqueta-riesgo">En riesgo</span>{/if}
 								<p class="detalle">
-									{p.etapa || 'Sin etapa'}{#if p.fecha}{' · '}<span class="mono">{fecha(p.fecha)}</span>{/if}{#if p.responsable && !asesor}{' · '}{p.responsable}{/if}
+									{p.etapa || 'Sin etapa'}{#if p.fecha}{' · '}<span class="mono">{fecha(p.fecha)}</span>{/if}{#if p.asesor && !asesor}{' · '}{p.asesor}{/if}
 								</p>
 							</div>
 							{#if p.dias !== null}
@@ -292,6 +300,15 @@
 		animation: pulso 2.4s ease-in-out infinite;
 	}
 
+	.incompleto {
+		margin-bottom: 12px;
+		padding: 8px 12px;
+		border-radius: 10px;
+		background: #fbeef0;
+		color: var(--granate);
+		font-size: 12px;
+	}
+
 	/* Avisos: lo que hay que mover hoy. En riesgo pesa más que sin fecha. */
 	.avisos {
 		display: grid;
@@ -345,8 +362,8 @@
 		position: relative;
 		height: 82px;
 		margin: 0 4px;
-		/* La zona de atrasadas teñida (el primer sexto). */
-		background: linear-gradient(90deg, rgb(163 33 58 / 0.06) calc(100% / 6), transparent calc(100% / 6));
+		/* La zona de atrasadas teñida (el primer tramo). */
+		background: linear-gradient(90deg, rgb(163 33 58 / 0.06) calc(100% / var(--rangos)), transparent calc(100% / var(--rangos)));
 	}
 	.marca {
 		position: absolute;
@@ -412,12 +429,10 @@
 		justify-content: flex-end;
 		gap: 12px;
 		padding: 0 10px 6px;
-		font-size: 10px;
-		color: var(--suave);
-	}
-	.leyenda {
 		flex-wrap: wrap;
 		row-gap: 2px;
+		font-size: 10px;
+		color: var(--suave);
 	}
 	.leyenda span {
 		white-space: nowrap;

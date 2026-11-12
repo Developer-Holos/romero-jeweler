@@ -203,7 +203,8 @@ a cambio). Las reglas están en `src/lib/server/widget/entregas.ts`:
   un aviso o un rombo muestra su lista: pieza, "Order #", etapa, fecha, asesor y cuánto falta, con link al lead.
 - Filtro por **asesor** (responsable del lead) y porcentaje de atrasadas.
 - Se recarga sola cada minuto y dice a qué hora se leyó Kommo (lo recuerda 2 minutos). Los días se cuentan en la hora de
-  Miami; no cuentan las piezas en Entregado, Post-Entrega, ganadas ni perdidas. "En curso" incluye las que no tienen fecha. Si Kommo falla, un aviso corto que se reintenta solo.
+  Miami; no cuentan las piezas en Entregado, Post-Entrega, ganadas ni perdidas. "En curso" incluye las que no tienen
+  fecha. Si Kommo falla, un aviso corto que se reintenta solo; si hay más de 5000 leads, un aviso de datos incompletos.
 
 Es privada: sin `PANEL_KEY` o con otra clave responde 404; abierta directo en una pestaña del navegador responde 403
 (`Sec-Fetch-Dest: document`; en `vite dev` sí se puede), y solo se puede mostrar en un iframe de los `ORIGENES`
