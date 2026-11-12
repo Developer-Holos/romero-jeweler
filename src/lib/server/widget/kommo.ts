@@ -105,14 +105,16 @@ const PREFIJO_CAMPO = "Imagen ";
 type Campo = { id: number; name: string; type: string; group_id: string | null };
 type Grupo = { id: string; name: string };
 
+const MAX_PAGINAS = 20;
 async function todos<T>(ruta: string, clave: string): Promise<T[]> {
 	const items: T[] = [];
-	for (let pagina = 1; pagina <= 20; pagina++) {
+	for (let pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
 		const res = await api(`${ruta}${ruta.includes("?") ? "&" : "?"}limit=250&page=${pagina}`);
 		if (res.status === 204) break;
 		const cuerpo = (await res.json()) as { _embedded?: Record<string, T[]>; _links?: { next?: unknown } };
 		items.push(...(cuerpo._embedded?.[clave] ?? []));
 		if (!cuerpo._links?.next) break;
+		if (pagina === MAX_PAGINAS) console.warn(`[kommo] ${ruta}: más de ${MAX_PAGINAS * 250} resultados, el resto no se leyó`);
 	}
 	return items;
 }
@@ -226,9 +228,9 @@ export async function lanzarBot(botId: number, leadId: number) {
 // ─── Panel de entregas (src/lib/server/widget/entregas.ts) ──────────────────
 export type LeadResumen = { id: number; nombre: string; etapa: number; embudo: number; responsable: number; valores: { campo: number; nombre: string; valores: unknown[] }[] };
 
-// Todos los leads (hasta 20 páginas de 250, el tope de `todos`) con sus campos.
-export async function leerLeads(): Promise<LeadResumen[]> {
-	const leads = await todos<{ id: number; name?: string; status_id?: number; pipeline_id?: number; responsible_user_id?: number; custom_fields_values?: { field_id: number; field_name?: string; values?: { value?: unknown }[] }[] | null }>("/api/v4/leads", "leads");
+// Los leads de un embudo (hasta 20 páginas de 250, el tope de `todos`) con sus campos.
+export async function leerLeads(embudo: number): Promise<LeadResumen[]> {
+	const leads = await todos<{ id: number; name?: string; status_id?: number; pipeline_id?: number; responsible_user_id?: number; custom_fields_values?: { field_id: number; field_name?: string; values?: { value?: unknown }[] }[] | null }>(`/api/v4/leads?filter[pipeline_id]=${embudo}`, "leads");
 	return leads.map((l) => ({
 		id: l.id,
 		nombre: l.name ?? `Lead #${l.id}`,

@@ -1,27 +1,19 @@
 // Datos de ejemplo para ver el panel de entregas sin Kommo (`vite dev` + `?demo`). Fijos: siempre los mismos leads,
 // con fechas relativas a hoy, para que el panel se vea igual cualquier día.
+import { PRODUCCION } from "../../kommo/pipeline.ts";
 import type { LeadResumen } from "./kommo.ts";
 
 const CAMPO_ORDEN = 9001;
-// Ids reales de las etapas de Producción (src/lib/kommo/pipeline.ts).
-export const ETAPAS_DEMO = new Map([
-	[113110623, "Diseño"],
-	[113110627, "Aprobación de diseño"],
-	[113110631, "En espera"],
-	[113110751, "Impresión 3D"],
-	[113110755, "Fundición"],
-	[113110759, "Trabajo en metal"],
-	[113110763, "Engaste"],
-	[113110767, "Acabado"],
-	[113110771, "Control de calidad"],
-	[113110775, "Listo para entrega"],
-]);
+// Las etapas reales de Producción.
+export const ETAPAS_DEMO = new Map(PRODUCCION.stages.map((s) => [s.id, s.name]));
+const etapa = (nombre: string) => PRODUCCION.stages.find((s) => s.name === nombre)!.id;
 export const USUARIOS_DEMO = new Map([
 	[1, "Carolina Romero"],
 	[2, "Javier Méndez"],
 	[3, "Lucía Fernández"],
 ]);
-const [DISENO, APROBACION, ESPERA, IMPRESION, FUNDICION, METAL, ENGASTE, ACABADO, CALIDAD, LISTO] = [...ETAPAS_DEMO.keys()];
+const [DISENO, APROBACION, ESPERA, IMPRESION, FUNDICION, METAL, ENGASTE, ACABADO, CALIDAD, LISTO] = ["Diseño", "Aprobación de diseño", "En espera", "Impresión 3D", "Fundición", "Trabajo en metal", "Engaste", "Acabado", "Control de calidad", "Listo para entrega"].map(etapa);
+const VENTAS = 14630839; // otro embudo, que también usa el campo de la fecha
 
 // [días hasta la entrega (null: sin fecha), nombre, etapa, Order #]
 const PIEZAS: [number | null, string, number, string][] = [
@@ -67,7 +59,7 @@ export function leadsDemo(campoFecha: number, ahora = Date.now()): LeadResumen[]
 		nombre,
 		etapa,
 		// Una pieza de otro embudo (Ventas) con el mismo campo: el panel no la cuenta.
-		embudo: i === 7 ? 14630839 : 14639515,
+		embudo: i === 7 ? VENTAS : PRODUCCION.id,
 		responsable: (i % 3) + 1,
 		valores: [
 			...(dias === null ? [] : [{ campo: campoFecha, nombre: "Fecha evento", valores: [hoy + dias * 86_400] }]),

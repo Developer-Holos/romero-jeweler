@@ -7,54 +7,62 @@
 	type Pieza = PageProps['data']['resumen']['sinFecha'][number];
 
 	let { data }: PageProps = $props();
-	const r = $derived(data.resumen);
+	const resumen = $derived(data.resumen);
 
-	// La regla: un tramo del mismo ancho por rango (no es una escala proporcional: lo cercano se ve más grande); dentro del
-	// tramo, la pieza va en su día y los extremos se recortan.
-	const TRAMOS: Record<string, { corto: string; desde: number; hasta: number }> = {
-		atrasadas: { corto: 'Atrasadas', desde: -30, hasta: -1 },
-		semana: { corto: '0–7 días', desde: 0, hasta: 7 },
-		mes: { corto: '8–30 días', desde: 8, hasta: 30 },
-		'dos-meses': { corto: '31–60 días', desde: 31, hasta: 60 },
-		'tres-meses': { corto: '61–90 días', desde: 61, hasta: 90 },
-		despues: { corto: '+90 días', desde: 91, hasta: 180 }
-	};
-	const MARCAS = ['Hoy', '7 d', '30 d', '60 d', '90 d'];
+	// La regla: un tramo del mismo ancho por rango (no es proporcional: lo cercano se ve más grande); dentro del tramo, la
+	// pieza va en su día. Los rangos abiertos se dibujan con 30 días de atrasadas y 90 después de los 90.
+	const VISTA_ATRAS = 30;
+	const VISTA_DESPUES = 90;
 	const PILA = 5; // rombos apilados como máximo; el resto se cuenta ("+3")
+	const ROMBO = 14; // px que ocupa un rombo girado, para apilar los que se tocarían
 
-	// Filtro por asesor: todo (totales, regla y listas) sale de las piezas filtradas.
-	const asesores = $derived([...new Set([...r.rangos.flatMap((x) => x.piezas), ...r.sinFecha].map((p) => p.responsable).filter(Boolean))].sort());
-	let asesor = $state('');
-	const de = (ps: Pieza[]) => (asesor ? ps.filter((p) => p.responsable === asesor) : ps);
-	const rangos = $derived(r.rangos.map((x) => ({ ...x, piezas: de(x.piezas) })));
-	const sinFecha = $derived(de(r.sinFecha));
+	// Filtro por asesor (por id: dos asesores pueden llamarse igual). Todo sale de las piezas filtradas.
+	const todas = $derived([...resumen.rangos.flatMap((x) => x.piezas), ...resumen.sinFecha]);
+	const asesores = $derived(
+		[...new Map(todas.filter((p) => p.responsable).map((p) => [p.asesor, p.responsable])).entries()].sort((a, b) => a[1].localeCompare(b[1]))
+	);
+	let elegidoAsesor = $state(0);
+	// Si el asesor elegido ya no tiene piezas tras una recarga, se vuelve a "Todos".
+	const asesor = $derived(asesores.some(([id]) => id === elegidoAsesor) ? elegidoAsesor : 0);
+	const delAsesor = (ps: Pieza[]) => (asesor ? ps.filter((p) => p.asesor === asesor) : ps);
+	const rangos = $derived(resumen.rangos.map((x) => ({ ...x, piezas: delAsesor(x.piezas) })));
+	const sinFecha = $derived(delAsesor(resumen.sinFecha));
 	const enRiesgo = $derived(rangos.flatMap((x) => x.piezas).filter((p) => p.riesgo));
-	const enCurso = $derived(rangos.reduce((n, x) => n + x.piezas.length, 0));
+	const enCurso = $derived(rangos.reduce((n, x) => n + x.piezas.length, sinFecha.length));
 	const atrasadas = $derived(rangos[0].piezas.length);
 
+	let ancho = $state(680);
 	const regla = $derived.by(() => {
+		const paso = Math.max(1.2, (ROMBO / ancho) * 100); // en % del ancho
 		const pila = new Map<number, number>();
 		const gemas: { p: Pieza; x: number; alto: number; clave: string }[] = [];
 		rangos.forEach((rango, i) =>
 			rango.piezas.forEach((p) => {
-				const t = TRAMOS[rango.clave];
-				const dentro = Math.min(1, Math.max(0, (p.dias! - t.desde) / Math.max(1, t.hasta - t.desde)));
-				const x = ((i + 0.1 + dentro * 0.8) / rangos.length) * 100;
-				const celda = Math.round(x / 1.6); // las que caen casi en el mismo punto se apilan
+				const desde = Number.isFinite(rango.desde) ? rango.desde : rango.hasta - VISTA_ATRAS;
+				const hasta = Number.isFinite(rango.hasta) ? rango.hasta : rango.desde + VISTA_DESPUES;
+				const dentro = Math.min(1, Math.max(0, (p.dias! - desde) / Math.max(1, hasta - desde)));
+				const celda = Math.round(((i + 0.1 + dentro * 0.8) / rangos.length) * 100 / paso); // las que se tocarían se apilan
 				const alto = pila.get(celda) ?? 0;
 				pila.set(celda, alto + 1);
-				if (alto < PILA) gemas.push({ p, x: celda * 1.6, alto, clave: rango.clave });
+				if (alto < PILA) gemas.push({ p, x: celda * paso, alto, clave: rango.clave });
 			})
 		);
-		const sobran = [...pila].filter(([, n]) => n > PILA).map(([celda, n]) => ({ x: celda * 1.6, n: n - PILA }));
+		const sobran = [...pila].filter(([, n]) => n > PILA).map(([celda, n]) => ({ x: celda * paso, n: n - PILA }));
 		return { gemas, sobran };
 	});
+	// Marcas en los bordes entre rangos: "Hoy" y el último día de cada uno.
+	const marcas = $derived(rangos.slice(0, -1).map((x, i) => (i === 0 ? 'Hoy' : `${x.hasta} d`)));
 
-	const inicial = () => (atrasadas ? 'atrasadas' : enRiesgo.length ? 'riesgo' : (rangos.find((x) => x.piezas.length)?.clave ?? 'semana'));
+	// Lo que se puede mirar en la lista: cada rango y los dos avisos.
+	const vistas = $derived<Record<string, { titulo: string; piezas: Pieza[] }>>({
+		...Object.fromEntries(rangos.map((x) => [x.clave, { titulo: x.nombre, piezas: x.piezas }])),
+		riesgo: { titulo: 'En riesgo', piezas: enRiesgo },
+		'sin-fecha': { titulo: 'Sin fecha de entrega', piezas: sinFecha }
+	});
+	const inicial = () => (atrasadas ? 'atrasadas' : enRiesgo.length ? 'riesgo' : (rangos.find((x) => x.piezas.length)?.clave ?? rangos[1].clave));
 	let elegido = $state<string | null>(null);
-	const seleccion = $derived(elegido ?? inicial());
-	const lista = $derived(seleccion === 'sin-fecha' ? sinFecha : seleccion === 'riesgo' ? enRiesgo : (rangos.find((x) => x.clave === seleccion)?.piezas ?? []));
-	const titulo = $derived(seleccion === 'sin-fecha' ? 'Sin fecha de entrega' : seleccion === 'riesgo' ? 'En riesgo' : TRAMOS[seleccion].corto);
+	const seleccion = $derived(elegido && vistas[elegido] ? elegido : inicial());
+	const vista = $derived(vistas[seleccion]);
 
 	// Tocar un rombo no saca del panel: elige su rango y señala la pieza en la lista.
 	let marcada = $state<number | null>(null);
@@ -62,24 +70,24 @@
 		elegido = clave;
 		marcada = id;
 		await tick();
-		document.getElementById(`p-${id}`)?.scrollIntoView({ block: 'nearest', behavior: quieto ? 'auto' : 'smooth' });
+		document.getElementById(`p-${id}`)?.scrollIntoView({ block: 'nearest', behavior: sinMovimiento ? 'auto' : 'smooth' });
 	}
 
-	const anio = $derived(r.hoy.slice(0, 4));
+	const anio = $derived(resumen.hoy.slice(0, 4));
 	const fecha = (dia: string) =>
 		new Intl.DateTimeFormat('es', { day: 'numeric', month: 'short', ...(dia.slice(0, 4) !== anio && { year: 'numeric' }), timeZone: 'UTC' }).format(new Date(`${dia}T00:00:00Z`));
 	const cuando = (dias: number) => (dias === 0 ? 'Hoy' : dias === 1 ? 'Mañana' : dias === -1 ? 'Ayer' : dias > 0 ? `En ${dias} días` : `Hace ${-dias} días`);
 	const piezas = (n: number) => `${n} ${n === 1 ? 'pieza' : 'piezas'}`;
 
-	// Se recarga sola (el servidor recuerda Kommo 2 minutos) y dice de cuándo son los datos.
+	// Se recarga sola cada minuto (el servidor recuerda Kommo 2 minutos: los datos tienen a lo sumo 3) y dice de cuándo son.
 	let ahora = $state(Date.now());
-	let quieto = $state(false);
-	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }).format(r.actualizado));
-	const hace = $derived(Math.max(0, Math.floor((ahora - r.actualizado) / 60_000)));
+	let sinMovimiento = $state(false);
+	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }).format(resumen.actualizado));
+	const hace = $derived(Math.max(0, Math.floor((ahora - resumen.actualizado) / 60_000)));
 	onMount(() => {
-		quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
+		sinMovimiento = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const reloj = setInterval(() => (ahora = Date.now()), 20_000);
-		const recarga = setInterval(() => invalidateAll(), 120_000);
+		const recarga = setInterval(() => invalidateAll(), 60_000);
 		return () => (clearInterval(reloj), clearInterval(recarga));
 	});
 </script>
@@ -102,9 +110,9 @@
 			{#if asesores.length > 1}
 				<label class="asesor">
 					<span class="sr-only">Asesor</span>
-					<select bind:value={asesor} onchange={() => ((elegido = null), (marcada = null))}>
-						<option value="">Todos los asesores</option>
-						{#each asesores as a (a)}<option value={a}>{a}</option>{/each}
+					<select value={asesor} onchange={(e) => ((elegidoAsesor = Number(e.currentTarget.value)), (elegido = null), (marcada = null))}>
+						<option value={0}>Todos los asesores</option>
+						{#each asesores as [id, nombre] (id)}<option value={id}>{nombre}</option>{/each}
 					</select>
 				</label>
 			{/if}
@@ -120,7 +128,7 @@
 			{#if enRiesgo.length}
 				<button type="button" class="aviso riesgo" aria-pressed={seleccion === 'riesgo'} onclick={() => (elegido = 'riesgo')}>
 					<span class="cifra-aviso">{enRiesgo.length}</span>
-					<span><strong>En riesgo</strong> · se entregan en {r.diasRiesgo} días o menos y siguen en diseño, aprobación, espera o impresión</span>
+					<span><strong>En riesgo</strong> · se entregan en {resumen.diasRiesgo} días o menos y siguen en diseño, aprobación, espera o impresión</span>
 				</button>
 			{/if}
 			{#if sinFecha.length}
@@ -133,8 +141,8 @@
 	{/if}
 
 	<section class="calibre" aria-label="Piezas por fecha de entrega">
-		<div class="regla" title="Cada tramo tiene el mismo ancho; dentro de él, las piezas van por día">
-			{#each MARCAS as m, i (m)}
+		<div class="regla" bind:clientWidth={ancho}>
+			{#each marcas as m, i (m)}
 				<span class="marca" class:hoy={i === 0} style="left: {((i + 1) / rangos.length) * 100}%">
 					<span class="etiqueta">{m}</span>
 				</span>
@@ -160,25 +168,26 @@
 			<span><i class="punto atrasadas"></i>Atrasada</span>
 			<span><i class="punto en-riesgo"></i>En riesgo</span>
 			<span><i class="punto"></i>A tiempo</span>
+			<span class="escala">Tramos de igual ancho, no proporcionales</span>
 		</p>
 
 		<div class="tramos" role="group" aria-label="Rango de fechas">
 			{#each rangos as rango (rango.clave)}
 				<button type="button" class="tramo {rango.clave}" aria-pressed={seleccion === rango.clave} onclick={() => (elegido = rango.clave)}>
 					<span class="cifra">{rango.piezas.length}</span>
-					<span class="nombre">{TRAMOS[rango.clave].corto}</span>
+					<span class="nombre">{rango.nombre}</span>
 				</button>
 			{/each}
 		</div>
 	</section>
 
 	<section class="lista" aria-live="polite">
-		<h2>{titulo} <span>· {piezas(lista.length)}</span></h2>
+		<h2>{vista.titulo} <span>· {piezas(vista.piezas.length)}</span></h2>
 		{#key `${seleccion}|${asesor}`}
-			{#if lista.length}
+			{#if vista.piezas.length}
 				<ul>
-					{#each lista as p, i (p.id)}
-						<li id="p-{p.id}" class:marcada={marcada === p.id} in:fly={{ y: 6, duration: quieto ? 0 : 220, delay: quieto ? 0 : Math.min(i, 12) * 22 }}>
+					{#each vista.piezas as p, i (p.id)}
+						<li id="p-{p.id}" class:marcada={marcada === p.id} in:fly={{ y: 6, duration: sinMovimiento ? 0 : 220, delay: sinMovimiento ? 0 : Math.min(i, 12) * 22 }}>
 							<div class="pieza">
 								<a href="{data.kommo}/leads/detail/{p.id}" target="_blank" rel="noopener">
 									{p.nombre}<span class="salir" aria-hidden="true">↗</span>
@@ -405,6 +414,22 @@
 		padding: 0 10px 6px;
 		font-size: 10px;
 		color: var(--suave);
+	}
+	.leyenda {
+		flex-wrap: wrap;
+		row-gap: 2px;
+	}
+	.leyenda span {
+		white-space: nowrap;
+	}
+	.escala {
+		margin-right: auto;
+		order: -1;
+	}
+	@media (max-width: 480px) {
+		.escala {
+			flex-basis: 100%;
+		}
 	}
 	.punto {
 		display: inline-block;

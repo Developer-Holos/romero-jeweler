@@ -323,11 +323,16 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 - **Privada**: clave en la URL (`PANEL_KEY`; el iframe no puede mandar headers), `frame-ancestors` con `ORIGENES` y rechazo de
   `Sec-Fetch-Dest: document`. Lo del navegador impide abrirla directo en una pestaña, pero quien tenga la URL con la clave
   puede leerla con `curl`: la clave es lo que de verdad la protege. `Referrer-Policy: no-referrer` para que no se filtre.
-- **Datos**: se recorren todos los leads (hasta 5000, el tope de `todos` en `kommo.ts`) y se filtra en memoria; la API v4 no
-  filtra bien por campos personalizados. Se recuerda 2 minutos.
+- **Datos**: se piden a Kommo solo los leads del embudo (`filter[pipeline_id]`, verificado con la cuenta real) y se filtra en
+  memoria por fecha y etapa. Tope de 5000 leads (`todos` en `kommo.ts` avisa en el log si se llega). Se recuerda 2 minutos y
+  varias cargas a la vez comparten la misma lectura.
 - **Solo Producción** (`KOMMO_EMBUDO_ENTREGAS`): el campo se llama "Fecha evento" y otros embudos podrían usarlo para la fecha
   de la boda o del evento.
 - **En riesgo**: entrega en 14 días o menos y todavía en una etapa anterior a Fundición. Regla inicial, a confirmar con el taller.
+- **A verificar (zona horaria)**: los días se cuentan pasando el timestamp del campo a la hora de Miami. Si Kommo guardara la
+  fecha a las 00:00 UTC, en Miami caería el día anterior; comprobarlo con un lead real que tenga la fecha.
+- `frame-ancestors` usa `ORIGENES`, cuyo valor por defecto incluye `http://localhost:4180` (el Kommo simulado). En producción
+  conviene definir `ORIGENES` solo con la cuenta de Kommo.
 - **A verificar**: en la cuenta real el campo 544152 se llama **"Fecha evento"**; confirmar que es la entrega estimada. El
   token del `.env` local solo ve 1 lead (sin el campo), así que el panel no se probó con datos reales: revisar que el token
   de Railway vea todos los leads. Falta confirmar si Kommo agrega parámetros a la URL del iframe o lo pone en `sandbox`.

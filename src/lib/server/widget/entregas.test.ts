@@ -50,7 +50,7 @@ describe("resumen de entregas", () => {
 		assert.deepEqual(ids(r, "semana"), [6]);
 		assert.deepEqual(r.sinFecha.map((p) => p.id), [3, 4, 5]);
 		assert.equal(r.sinFecha[0].orden, "1146");
-		assert.equal(r.enCurso, 1);
+		assert.equal(r.enCurso, 4); // en curso: con fecha y sin fecha
 	});
 
 	it("cuenta solo el embudo pedido (otro embudo puede usar el campo para otra fecha)", () => {
@@ -65,5 +65,37 @@ describe("resumen de entregas", () => {
 		const r = resumirEntregas(leads, OPC, AHORA);
 		const riesgo = r.rangos.flatMap((x) => x.piezas).filter((p) => p.riesgo).map((p) => p.id);
 		assert.deepEqual(riesgo.sort(), [1, 5]); // la atrasada ya cuenta como atrasada
+	});
+
+	it("no cuenta las piezas ya entregadas aunque su fecha haya pasado", () => {
+		const ENTREGADO = 113110779;
+		const POST_ENTREGA = 113110783;
+		const r = resumirEntregas([lead(1, enDias(-5), ENTREGADO), lead(2, enDias(-5), POST_ENTREGA), lead(3, undefined, ENTREGADO), lead(4, enDias(-5))], OPC, AHORA);
+		assert.deepEqual(ids(r, "atrasadas"), [4]);
+		assert.deepEqual(r.sinFecha, []);
+	});
+
+	it("el riesgo cuenta Diseño, Aprobación, En espera e Impresión 3D, no Leads Entrantes", () => {
+		const [ENTRANTES, DISENO, APROBACION, ESPERA, IMPRESION] = [113110619, 113110623, 113110627, 113110631, 113110751];
+		const r = resumirEntregas([ENTRANTES, DISENO, APROBACION, ESPERA, IMPRESION].map((e, i) => lead(i + 1, enDias(3), e)), OPC, AHORA);
+		assert.deepEqual(r.rangos[1].piezas.filter((p) => p.riesgo).map((p) => p.id), [2, 3, 4, 5]);
+	});
+
+	it("identifica al asesor por id, aunque dos se llamen igual", () => {
+		const leads = [lead(1, enDias(3)), { ...lead(2, enDias(3)), responsable: 6 }];
+		const r = resumirEntregas(leads, { ...OPC, usuarios: new Map([[5, "Ana"], [6, "Ana"]]) }, AHORA);
+		assert.deepEqual(r.rangos[1].piezas.map((p) => [p.asesor, p.responsable]), [[5, "Ana"], [6, "Ana"]]);
+	});
+
+	it("cada rango trae su nombre y sus límites, para que la página no los repita", () => {
+		const r = resumirEntregas([], OPC, AHORA);
+		assert.deepEqual(r.rangos.map((x) => [x.nombre, x.desde, x.hasta]), [
+			["Atrasadas", -Infinity, -1],
+			["0–7 días", 0, 7],
+			["8–30 días", 8, 30],
+			["31–60 días", 31, 60],
+			["61–90 días", 61, 90],
+			["+90 días", 91, Infinity],
+		]);
 	});
 });

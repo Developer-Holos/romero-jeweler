@@ -1,6 +1,7 @@
 // /api es la API del widget de invoice, que la llama desde la cuenta de Kommo (otro origen): CORS y, si
 // WIDGET_KEY está definida, el header X-Widget-Key (menos /api/salud, /api/admin, que tiene su propia clave, el
 // webhook de Dropbox, que va firmado, y los de Kommo —mensajes y señal de seguimiento—, que no pueden mandar el header).
+// /panel (panel de control de Kommo) va aparte: pide `?clave=` (ver `panel` abajo).
 import type { Handle, ServerInit } from '@sveltejs/kit/hooks';
 import { dev } from '$app/env';
 import { dropboxConfigurado } from '#lib/server/widget/dropbox.ts';

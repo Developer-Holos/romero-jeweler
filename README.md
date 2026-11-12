@@ -195,15 +195,15 @@ logs llevan los prefijos `[mensajes]` y `[seguimientos]`.
 (`KOMMO_EMBUDO_ENTREGAS`) por **fecha de entrega estimada** (campo fecha 544152, `KOMMO_CAMPO_ENTREGA`; aproximada y sujeta
 a cambio). Las reglas están en `src/lib/server/widget/entregas.ts`:
 
-- **En riesgo** (aviso ámbar, arriba): se entrega en 14 días o menos (`DIAS_RIESGO`) y sigue en Leads Entrantes, Diseño,
-  Aprobación, En espera o Impresión 3D (`ETAPAS_TEMPRANAS`). Es la regla inicial; la ajusta el taller.
+- **En riesgo** (aviso ámbar, arriba): se entrega en 14 días o menos (`DIAS_RIESGO`) y sigue en Diseño, Aprobación de diseño,
+  En espera o Impresión 3D (`ETAPAS_TEMPRANAS`). Es la regla inicial; la ajusta el taller.
 - **Sin fecha**: piezas en curso sin fecha de entrega.
 - Una **regla de tiempo** (cada pieza es un rombo en su fecha; "Hoy" es la aguja; cada tramo tiene el mismo ancho, no es
   proporcional) y los **rangos** (atrasadas, 0–7, 8–30, 31–60, 61–90 y +90 días, `RANGOS`) con su cantidad. Tocar un rango,
   un aviso o un rombo muestra su lista: pieza, "Order #", etapa, fecha, asesor y cuánto falta, con link al lead.
 - Filtro por **asesor** (responsable del lead) y porcentaje de atrasadas.
-- Se recarga sola cada 2 minutos y dice a qué hora se leyó Kommo (lo recuerda 2 minutos). Los días se cuentan en la hora de
-  Miami; los leads ganados o perdidos (142/143) no cuentan. Si Kommo falla, un aviso corto que se reintenta solo.
+- Se recarga sola cada minuto y dice a qué hora se leyó Kommo (lo recuerda 2 minutos). Los días se cuentan en la hora de
+  Miami; no cuentan las piezas en Entregado, Post-Entrega, ganadas ni perdidas. "En curso" incluye las que no tienen fecha. Si Kommo falla, un aviso corto que se reintenta solo.
 
 Es privada: sin `PANEL_KEY` o con otra clave responde 404; abierta directo en una pestaña del navegador responde 403
 (`Sec-Fetch-Dest: document`; en `vite dev` sí se puede), y solo se puede mostrar en un iframe de los `ORIGENES`
