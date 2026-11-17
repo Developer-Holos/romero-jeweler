@@ -192,7 +192,7 @@ logs llevan los prefijos `[mensajes]` y `[seguimientos]`.
 
 `GET /panel/entregas?clave=<PANEL_KEY>` es una página para el **panel de control personalizado de Kommo** (en el panel:
 "+" → agregar widget → pegar la URL y elegir el tamaño). Muestra las piezas en curso del embudo **Producción**
-(`KOMMO_EMBUDO_ENTREGAS`) por **fecha de entrega estimada** (campo fecha 544152, `KOMMO_CAMPO_ENTREGA`; aproximada y sujeta
+(`KOMMO_EMBUDO_ENTREGAS`) por **fecha de entrega estimada** (campo fecha 544100 "1. F. Entrega", `KOMMO_CAMPO_ENTREGA`; aproximada y sujeta
 a cambio). Las reglas están en `src/lib/server/widget/entregas.ts`:
 
 - **En riesgo** (aviso ámbar, arriba): se entrega en 14 días o menos (`DIAS_RIESGO`) y sigue en Diseño, Aprobación de diseño,

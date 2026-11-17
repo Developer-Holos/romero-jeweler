@@ -319,7 +319,7 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 ## Panel de entregas (2026-11-12)
 
 - **Qué**: `/panel/entregas` para el panel de control personalizado de Kommo (un iframe con una URL), con las piezas por fecha
-  de entrega estimada (campo 544152).
+  de entrega estimada (campo 544100, "1. F. Entrega").
 - **Privada**: clave en la URL (`PANEL_KEY`; el iframe no puede mandar headers), `frame-ancestors` con `ORIGENES` y rechazo de
   `Sec-Fetch-Dest: document`. Lo del navegador impide abrirla directo en una pestaña, pero quien tenga la URL con la clave
   puede leerla con `curl`: la clave es lo que de verdad la protege. `Referrer-Policy: no-referrer` para que no se filtre.
@@ -330,14 +330,14 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
   martillar a Kommo, global entre todos los visores). Mientras se relee, los demás pedidos reciben la copia vigente sin
   esperar. Si Kommo falla al releer, se sigue sirviendo la lectura anterior, queda en el log y el botón avisa "No se pudo
   actualizar"; si el servidor se negó por el límite, avisa "Ya está al día".
-- **Solo Producción** (`KOMMO_EMBUDO_ENTREGAS`): el campo se llama "Fecha evento" y otros embudos podrían usarlo para la fecha
-  de la boda o del evento.
+- **Solo Producción** (`KOMMO_EMBUDO_ENTREGAS`): otros embudos podrían usar el mismo campo para otra fecha.
 - **En riesgo**: entrega en 14 días o menos y todavía en una etapa anterior a Fundición. Regla inicial, a confirmar con el taller.
 - **A verificar (zona horaria)**: los días se cuentan pasando el timestamp del campo a la hora de Miami. Si Kommo guardara la
   fecha a las 00:00 UTC, en Miami caería el día anterior; comprobarlo con un lead real que tenga la fecha.
 - `frame-ancestors` usa `ORIGENES`, cuyo valor por defecto incluye `http://localhost:4180` (el Kommo simulado). En producción
   conviene definir `ORIGENES` solo con la cuenta de Kommo.
-- **A verificar**: en la cuenta real el campo 544152 se llama **"Fecha evento"**; confirmar que es la entrega estimada. El
+- **Campo de la fecha**: decidido el 2026-11-17: el panel usa **544100 "1. F. Entrega"**. Existe también 544152 "2. F. Evento"
+  (fecha del evento), que el panel ya no lee. **A verificar**: el
   token del `.env` local solo ve 1 lead (sin el campo), así que el panel no se probó con datos reales: revisar que el token
   de Railway vea todos los leads. Falta confirmar si Kommo agrega parámetros a la URL del iframe o lo pone en `sandbox`.
 

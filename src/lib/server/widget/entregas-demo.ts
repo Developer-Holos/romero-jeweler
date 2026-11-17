@@ -61,7 +61,7 @@ export function leadsDemo(campoFecha: number, ahora = Date.now()): LeadResumen[]
 		embudo: i === 7 ? VENTAS : PRODUCCION.id,
 		responsable: (i % 3) + 1,
 		valores: [
-			...(dias === null ? [] : [{ campo: campoFecha, nombre: "Fecha evento", valores: [hoy + dias * 86_400] }]),
+			...(dias === null ? [] : [{ campo: campoFecha, nombre: "1. F. Entrega", valores: [hoy + dias * 86_400] }]),
 			...(orden ? [{ campo: CAMPO_ORDEN, nombre: "Order #", valores: [orden] }] : []),
 		],
 	}));

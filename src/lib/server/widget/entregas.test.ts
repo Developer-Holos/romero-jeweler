@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { diaLocal, resumirEntregas } from "./entregas.ts";
 import type { LeadResumen } from "./kommo.ts";
 
-const CAMPO = 544152;
+const CAMPO = 544100;
 // 12 nov 2026, 10:00 en Miami.
 const AHORA = Date.parse("2026-11-12T15:00:00Z");
 // Kommo guarda la fecha como medianoche (segundos unix); aquí, medianoche de Miami a `dias` de AHORA.
@@ -14,7 +14,7 @@ const lead = (id: number, valor: unknown, etapa = 1, orden?: string, embudo = 9)
 	etapa,
 	embudo,
 	responsable: 5,
-	valores: [...(valor === undefined ? [] : [{ campo: CAMPO, nombre: "Fecha evento", valores: [valor] }]), ...(orden ? [{ campo: 7, nombre: "Order #", valores: [orden] }] : [])],
+	valores: [...(valor === undefined ? [] : [{ campo: CAMPO, nombre: "1. F. Entrega", valores: [valor] }]), ...(orden ? [{ campo: 7, nombre: "Order #", valores: [orden] }] : [])],
 });
 const OPC = { campo: CAMPO, etapas: new Map<number, string>(), usuarios: new Map([[5, "Carolina"]]) };
 const ids = (r: ReturnType<typeof resumirEntregas>, clave: string) => r.rangos.find((x) => x.clave === clave)!.piezas.map((p) => p.id);

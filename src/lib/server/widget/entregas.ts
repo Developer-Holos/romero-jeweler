@@ -1,5 +1,5 @@
 // Panel de entregas para el panel de control de Kommo (/panel/entregas): piezas por fecha de entrega estimada.
-// La fecha es aproximada y sujeta a cambio; sale de un campo fecha del lead (544152 por defecto).
+// La fecha es aproximada y sujeta a cambio; sale de un campo fecha del lead (544100, "1. F. Entrega", por defecto).
 // Solo funciones puras (se prueban sin servidor); la lectura de Kommo está en la ruta.
 import { idEtapa } from "#lib/kommo/pipeline.ts";
 import type { LeadResumen } from "./kommo.ts";

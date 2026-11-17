@@ -249,7 +249,7 @@ describe("panel de entregas", () => {
 
 	it("dentro del iframe de Kommo muestra las piezas con fecha próxima", async () => {
 		const enTresDias = Math.floor(Date.now() / 1000) + 3 * 86_400;
-		kommo.lead.set(990001, [{ field_id: 544152, values: [{ value: enTresDias as unknown as Record<string, unknown> }] }]);
+		kommo.lead.set(990001, [{ field_id: 544100, values: [{ value: enTresDias as unknown as Record<string, unknown> }] }]);
 		const res = await panel("?clave=clave-panel", "iframe");
 		assert.equal(res.status, 200);
 		assert.match(res.headers.get("Content-Security-Policy") ?? "", /frame-ancestors https:\/\/romerojeweler\.kommo\.com/);
