@@ -91,10 +91,12 @@
 	const hace = $derived(Math.max(0, Math.floor((ahora - resumen.actualizado) / 60_000)));
 
 	// Botón "actualizar": `?actualizar` le pide al servidor que lea Kommo de nuevo en vez de usar lo recordado. Después se
-	// quita de la URL, para que las recargas de cada minuto no vuelvan a forzar la lectura. Si el servidor se negó (leyó hace
-	// menos de 10 s) o Kommo falló, la hora no cambia: se avisa para que no parezca que el botón no hace nada.
+	// quita de la URL, para que las recargas de cada minuto no vuelvan a forzar la lectura. Si la hora no cambia (el servidor
+	// leyó hace menos de 10 s) o Kommo falló (`fallo`), se avisa para que no parezca que el botón no hace nada.
+	const AVISO_MS = 3000;
 	let leyendo = $state(false);
-	let alDia = $state(false);
+	let aviso = $state<{ texto: string; falla: boolean } | null>(null);
+	let apagarAviso: ReturnType<typeof setTimeout> | undefined;
 	async function refrescar() {
 		if (leyendo) return;
 		leyendo = true;
@@ -104,12 +106,14 @@
 			url.searchParams.set('actualizar', '');
 			const opciones = { replaceState: true, noScroll: true, keepFocus: true };
 			await goto(url, opciones);
+			const falla = !!data.fallo;
+			if (falla || resumen.actualizado === antes) {
+				aviso = { texto: falla ? 'No se pudo actualizar' : 'Ya está al día', falla };
+				clearTimeout(apagarAviso);
+				apagarAviso = setTimeout(() => (aviso = null), AVISO_MS);
+			}
 			url.searchParams.delete('actualizar');
 			await goto(url, opciones);
-			if (resumen.actualizado === antes) {
-				alDia = true;
-				setTimeout(() => (alDia = false), 3000);
-			}
 		} finally {
 			leyendo = false;
 		}
@@ -118,7 +122,7 @@
 		sinMovimiento = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const reloj = setInterval(() => (ahora = Date.now()), 20_000);
 		const recarga = setInterval(() => invalidateAll(), 60_000);
-		return () => (clearInterval(reloj), clearInterval(recarga));
+		return () => (clearInterval(reloj), clearInterval(recarga), clearTimeout(apagarAviso));
 	});
 </script>
 
@@ -146,9 +150,10 @@
 					</select>
 				</label>
 			{/if}
-			<p class="estado" title="Se actualiza sola cada minuto" aria-live="polite">
+			<p class="estado" title="Se actualiza sola cada minuto">
 				<span class="pulso" aria-hidden="true"></span>
-				{#if alDia}Ya está al día · {hora}{:else}Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}{/if}
+				{#if aviso}<span class:alerta={aviso.falla}>{aviso.texto} · {hora}</span>{:else}Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}{/if}
+				<span class="sr-only" role="status">{aviso?.texto ?? ''}</span>
 				<button type="button" class="refrescar" class:leyendo onclick={refrescar} disabled={leyendo} aria-label="Actualizar ahora" title="Actualizar ahora">
 					<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" /><path d="M13.5 2v3h-3" /></svg>
 				</button>

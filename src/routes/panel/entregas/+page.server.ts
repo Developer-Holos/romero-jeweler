@@ -12,8 +12,10 @@ const resumir = (leads: LeadResumen[], etapas: Map<number, string>, usuarios: Ma
 
 // Kommo puede recargar el panel seguido; se recuerda 2 minutos para no recorrer los leads en cada carga. Mientras se lee,
 // los demás pedidos esperan esa misma lectura en vez de empezar otra. El botón "actualizar" (`?actualizar`) salta lo
-// recordado, pero no más seguido que cada 10 s, y si esa lectura falla sigue sirviendo lo anterior.
-type Lectura = { resumen: ResumenEntregas; incompleto: boolean };
+// recordado, pero no más seguido que cada 10 s, y si esa lectura falla sigue sirviendo lo anterior (con `fallo`, para avisar).
+const RECORDAR = 120_000;
+const MINIMO_RELEER = 10_000;
+type Lectura = { resumen: ResumenEntregas; incompleto: boolean; fallo?: boolean };
 
 async function leer() {
 	// Sin nombres de etapa o de asesor el panel sirve igual.
@@ -24,7 +26,14 @@ async function leer() {
 	return { resumen, incompleto: leads.length >= MAX_RESULTADOS };
 }
 
-const lectura = recordar<Lectura>(leer, { duracion: 120_000, minimoParaReleer: 10_000 });
+const lectura = recordar<Lectura>(leer, {
+	duracion: RECORDAR,
+	minimoParaReleer: MINIMO_RELEER,
+	alFallarReleyendo: (e, copia) => {
+		console.error('[entregas] no se pudo actualizar desde Kommo; se sigue con la lectura anterior:', e);
+		return { ...copia, fallo: true };
+	}
+});
 
 export const load = async ({ url }) => {
 	const kommo = `https://${env.KOMMO_SUBDOMAIN}.kommo.com`;

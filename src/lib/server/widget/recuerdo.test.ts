@@ -75,12 +75,63 @@ describe("recordar", () => {
 		pasar(MINIMO);
 		estado.falla = true;
 		assert.equal(await lectura(true), "lectura 1");
-		// Y lo anterior sigue recordado con su hora original: sin releer no se vuelve a llamar.
+		// Lo anterior sigue recordado: sin releer no se vuelve a llamar.
 		assert.equal(await lectura(), "lectura 1");
 		assert.equal(estado.llamadas, 2);
-		// Cuando Kommo vuelve, releer funciona (la lectura anterior ya tiene más de MINIMO).
+	});
+
+	it("un releer fallido también cuenta para el mínimo: durante una caída no se llama a Kommo en cada clic", async () => {
+		const { lectura, estado, pasar } = montar();
+		await lectura();
+		pasar(MINIMO);
+		estado.falla = true;
+		await lectura(true);
+		await lectura(true);
+		await lectura(true);
+		assert.equal(estado.llamadas, 2); // la lectura buena y un solo intento fallido
+		pasar(MINIMO);
 		estado.falla = false;
-		assert.equal(await lectura(true), "lectura 3");
+		assert.equal(await lectura(true), "lectura 3"); // cuando pasó el mínimo y Kommo volvió, se lee
+	});
+
+	it("alFallarReleyendo decide qué se sirve y recibe el error", async () => {
+		let visto: unknown;
+		let reloj = 0;
+		let falla = false;
+		const lectura = recordar(async () => (falla ? Promise.reject(new Error("Kommo caído")) : "buena"), {
+			duracion: DURACION,
+			minimoParaReleer: MINIMO,
+			ahora: () => reloj,
+			alFallarReleyendo: (error, copia) => ((visto = error), `${copia} (vieja)`),
+		});
+		await lectura();
+		reloj = MINIMO;
+		falla = true;
+		assert.equal(await lectura(true), "buena (vieja)");
+		assert.match((visto as Error).message, /Kommo caído/);
+		assert.equal(await lectura(), "buena"); // lo guardado no queda marcado
+	});
+
+	it("mientras se relee, los demás pedidos reciben la copia vigente sin esperar", async () => {
+		let reloj = 0;
+		let lecturas = 0;
+		let terminar!: () => void;
+		const lectura = recordar(
+			() => {
+				lecturas++;
+				return lecturas === 1 ? Promise.resolve("vieja") : new Promise<string>((ok) => (terminar = () => ok("nueva")));
+			},
+			{ duracion: DURACION, minimoParaReleer: MINIMO, ahora: () => reloj }
+		);
+		await lectura();
+		reloj = MINIMO;
+		const releyendo = lectura(true); // lenta: sigue pendiente
+		assert.equal(await lectura(), "vieja");
+		assert.equal(await lectura(true), "vieja"); // otro clic mientras tanto: ni espera ni lee dos veces
+		terminar();
+		assert.equal(await releyendo, "nueva");
+		assert.equal(await lectura(), "nueva");
+		assert.equal(lecturas, 2);
 	});
 
 	it("si falla al releer y lo recordado ya venció, da el error", async () => {

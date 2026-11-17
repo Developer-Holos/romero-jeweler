@@ -256,7 +256,7 @@ describe("panel de entregas", () => {
 		assert.equal(datos.status, 200);
 	});
 
-	it("el botón de actualizar (?actualizar) responde igual y mantiene la guardia; la lógica de releer está en recuerdo.test.ts", async () => {
+	it("el botón de actualizar (?actualizar) pasa por la misma guardia (la lógica de releer se prueba en recuerdo.test.ts)", async () => {
 		assert.equal((await panel("?clave=clave-panel&actualizar=", "iframe")).status, 200);
 		assert.equal((await panel("?actualizar=", "iframe")).status, 404);
 	});
