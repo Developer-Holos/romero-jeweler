@@ -171,6 +171,13 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
 - **Llamadas a Kommo**: se cortan a los 30 s, en la API (`kommo.ts`) y en el widget (`kommoApi`). Si Kommo se cuelga, el
   PDF se descarga igual con el aviso.
 
+- **Logs (Railway)**: `src/lib/server/widget/log.ts` imprime una línea JSON por evento (`evento`, `nivel`, `ts` + datos), y los
+  stacks salen en una sola línea. Filtra por `evento`: `peticion` (una por cada /api y /panel: ruta, parámetros, estado, ms; nunca la
+  URL completa ni el cuerpo, y las claves/tokens se ocultan), `invoice`/`orden`/`pdf` (lead, campo usado y su origen `widget`/`env`),
+  `videos_inicio`/`videos_repaso`, `error_no_controlado`. Ruido que no es de la app: `checkpoint …` de Postgres (sale como error por
+  ir a stderr), `invalid length of startup packet`, `traces export`/OTLP. Si el repaso de Dropbox da `path/not_found`, el cursor se
+  renueva solo; si `DROPBOX_RAIZ` no existe, el error lo dice.
+
 ## Probar el widget sin Kommo
 
 `node widget/_tour_src/kommo.mjs` levanta un Kommo simulado en el puerto 4180: carga el `script.js` + `app.js`

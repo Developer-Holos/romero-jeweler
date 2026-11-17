@@ -31,7 +31,9 @@ const kommo = {
 };
 // Dropbox falso: archivos por ruta y la lista de cambios que devuelve list_folder/continue (cursor "cN" = desde N).
 type ArchivoFalso = { ".tag": "file" | "deleted"; name: string; path_lower: string; path_display: string; size?: number; server_modified?: string };
-const dropbox = { cambios: [] as ArchivoFalso[], links: new Map<string, string>() };
+// `cursorPerdido`: el cursor guardado apunta a una carpeta que ya no existe; list_folder/continue da 409 path/not_found (como
+// en producción) hasta que se pide un cursor nuevo.
+const dropbox = { cambios: [] as ArchivoFalso[], links: new Map<string, string>(), cursorPerdido: false };
 const subirADropbox = (ruta: string) => {
 	const a: ArchivoFalso = { ".tag": "file", name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta, size: 1234, server_modified: "2026-11-03T12:00:00Z" };
 	dropbox.cambios.push(a);
@@ -54,8 +56,10 @@ const falso = createServer(async (req, res) => {
 			case "/2/users/get_current_account":
 				return json({ root_info: { ".tag": "user", root_namespace_id: "1", home_namespace_id: "1" } });
 			case "/2/files/list_folder/get_latest_cursor":
+				dropbox.cursorPerdido = false;
 				return json({ cursor: `c${dropbox.cambios.length}` });
 			case "/2/files/list_folder/continue": {
+				if (dropbox.cursorPerdido) return json({ error: { ".tag": "path", path: { ".tag": "not_found" } }, error_summary: "path/not_found/" }, 409);
 				const desde = Number(String(cuerpo.cursor).slice(1));
 				return json({ entries: dropbox.cambios.slice(desde), cursor: `c${dropbox.cambios.length}`, has_more: false });
 			}
@@ -129,6 +133,8 @@ const falso = createServer(async (req, res) => {
 	if (lead && !lead[2] && req.method === "GET") return kommo.fallarLead > 0 ? (kommo.fallarLead--, json({ error: "caído" }, 500)) : json({ id: +lead[1], price: kommo.precios.get(+lead[1]) ?? 0, custom_fields_values: kommo.lead.get(+lead[1]) ?? null });
 	if (lead && !lead[2] && req.method === "PATCH") {
 		const { custom_fields_values } = JSON.parse((await leer(req)).toString()) as { custom_fields_values: ValorCampo[] };
+		// Un field_id que no existe en los leads (campo borrado, id viejo): Kommo responde así.
+		if (custom_fields_values.some((v) => v.field_id === 999999)) return json({ "validation-errors": [{ request_id: "0", errors: [{ code: "NotSupportedChoice", path: "custom_fields_values.0.field_id", detail: "The value you selected is not a valid choice." }] }], status: 400 }, 400);
 		const valores = (kommo.lead.get(+lead[1]) ?? []).filter((v) => !custom_fields_values.some((n) => n.field_id === v.field_id));
 		kommo.lead.set(+lead[1], [...valores, ...custom_fields_values]);
 		return json({ id: +lead[1] });
@@ -387,6 +393,14 @@ describe("opciones compartidas", () => {
 });
 
 describe("campo Invoice que indica el widget", () => {
+	it("si el campo no existe en Kommo, descarga el PDF y avisa cuál es el campo", async () => {
+		const { numero } = await (await app.request("/invoices/numero", { method: "POST", headers: W, body: JSON.stringify({ lead_id: 4243 }) })).json();
+		const res = await app.request(`/invoices/${numero}/pdf`, { method: "POST", headers: W, body: JSON.stringify({ html: "<p>x</p>", total: 1, campo_id: 999999 }) });
+		assert.equal(res.status, 200);
+		assert.equal(res.headers.get("X-Kommo-Estado"), "error");
+		assert.match(res.headers.get("X-Kommo-Detalle") ?? "", /campo 999999 no existe/);
+	});
+
 	it("guarda el PDF en ese campo en vez de KOMMO_CAMPO_INVOICE", async () => {
 		const { numero } = await (await app.request("/invoices/numero", { method: "POST", headers: W, body: JSON.stringify({ lead_id: 4242 }) })).json();
 		const res = await app.request(`/invoices/${numero}/pdf`, { method: "POST", headers: W, body: JSON.stringify({ html: "<p>x</p>", total: 1, campo_id: 288076 }) });
@@ -459,6 +473,20 @@ describe("video del cliente (Dropbox)", () => {
 		await webhook();
 		await pausa();
 		assert.equal(kommo.bots.length, enviados);
+	});
+
+	it("si el cursor guardado apunta a una carpeta que ya no existe, se renueva y los videos siguientes se avisan", async () => {
+		kommo.lead.set(7010, [{ field_id: 801, values: [{ value: "1150" as never }] }]);
+		dropbox.cursorPerdido = true;
+		await webhook(); // antes del arreglo: 409 path/not_found en cada pasada, para siempre
+		await pausa();
+		assert.equal(dropbox.cursorPerdido, false, "no se pidió un cursor nuevo");
+		const enviados = kommo.bots.length;
+		subirADropbox("/Ordenes/1150/1150_completo.mp4");
+		await webhook();
+		await esperar(() => kommo.bots.length === enviados + 1);
+		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7010 });
+		kommo.bots.pop(); // los tests que siguen cuentan los bots lanzados
 	});
 
 	it("GET dice cómo está el video sin tocar nada", async () => {

@@ -6,7 +6,8 @@
 // se desmarca si algo falla. Una fila con `carpeta` y sin `avisado` es un aviso pendiente y se reintenta 30 días.
 import { guardarAjuste, leerAjuste } from "./datos.ts";
 import type { Db } from "./db.ts";
-import { carpetaDe, cursorInicial, linkCompartido, videoDeOrden, videosNuevos, type ArchivoDropbox } from "./dropbox.ts";
+import { log } from "./log.ts";
+import { carpetaDe, raizConfigurada, cursorInicial, linkCompartido, videoDeOrden, videosNuevos, type ArchivoDropbox } from "./dropbox.ts";
 import { agregarNota, CAMPO_VIDEO, campoPorNombre, guardarTexto, lanzarBot, leadsPorOrden } from "./kommo.ts";
 
 export const ordenValida = (orden: string) => /^[A-Za-z0-9_-]{1,40}$/.test(orden);
@@ -132,22 +133,29 @@ export function procesarCambios(db: Db, botId?: number): Promise<void> {
 		do {
 			otraVez = false;
 			const hechas = new Set<string>();
-			const cursor = await leerAjuste<string>(db, "dropbox_cursor");
-			if (!cursor) {
-				// No se creó al arrancar (Dropbox no respondió): lo que cambió antes de ahora no se ve.
-				console.warn("[videos] no había cursor de Dropbox: se crea ahora");
-				await guardarAjuste(db, "dropbox_cursor", await cursorInicial());
-			} else {
-				const { videos, borrados, cursor: nuevo } = await videosNuevos(cursor);
-				for (const ruta of borrados) await carpetaBorrada(db, ruta).catch((e) => console.error(`[videos] borrado ${ruta}:`, e));
-				for (const v of videos) {
-					hechas.add(v.orden.toLowerCase());
-					// Si falla, revisarVideo lo deja pendiente: el cursor puede avanzar sin perderlo.
-					await revisarVideo(db, v.orden, { archivo: v.archivo, botId }).catch((e) => console.error(`[videos] orden ${v.orden}:`, e));
+			// Si leer los cambios falla (Dropbox caído, raíz inexistente…), los avisos pendientes se reintentan igual.
+			let falloCambios: unknown;
+			try {
+				const cursor = await leerAjuste<string>(db, "dropbox_cursor");
+				if (!cursor) {
+					// No se creó al arrancar (Dropbox no respondió): lo que cambió antes de ahora no se ve.
+					console.warn("[videos] no había cursor de Dropbox: se crea ahora");
+					await guardarAjuste(db, "dropbox_cursor", await cursorInicial());
+				} else {
+					const { videos, borrados, cursor: nuevo } = await videosNuevos(cursor);
+					for (const ruta of borrados) await carpetaBorrada(db, ruta).catch((e) => console.error(`[videos] borrado ${ruta}:`, e));
+					for (const v of videos) {
+						hechas.add(v.orden.toLowerCase());
+						// Si falla, revisarVideo lo deja pendiente: el cursor puede avanzar sin perderlo.
+						await revisarVideo(db, v.orden, { archivo: v.archivo, botId }).catch((e) => console.error(`[videos] orden ${v.orden}:`, e));
+					}
+					await guardarAjuste(db, "dropbox_cursor", nuevo);
 				}
-				await guardarAjuste(db, "dropbox_cursor", nuevo);
+			} catch (e) {
+				falloCambios = e;
 			}
 			await reintentarPendientes(db, botId, hechas);
+			if (falloCambios) throw falloCambios;
 		} while (otraVez);
 	})().finally(() => (procesando = null));
 	return procesando;
@@ -157,6 +165,8 @@ export function procesarCambios(db: Db, botId?: number): Promise<void> {
 // los pendientes aunque Dropbox no avise (p. ej. cuando un asesor llena el Order # después).
 const REPASO = 10 * 60_000;
 export async function iniciarVideos(db: Db, botId?: number) {
-	setInterval(() => procesarCambios(db, botId).catch((e) => console.error("[videos] repaso:", e)), REPASO).unref();
-	if (!(await leerAjuste<string>(db, "dropbox_cursor"))) await guardarAjuste(db, "dropbox_cursor", await cursorInicial());
+	setInterval(() => procesarCambios(db, botId).catch((e) => log("error", "videos_repaso", { error: e })), REPASO).unref();
+	const cursor = await leerAjuste<string>(db, "dropbox_cursor");
+	log("info", "videos_inicio", { raiz: raizConfigurada() || "(todo Dropbox)", cursor: cursor ? `${cursor.slice(0, 8)}…` : "(no había)" });
+	if (!cursor) await guardarAjuste(db, "dropbox_cursor", await cursorInicial());
 }

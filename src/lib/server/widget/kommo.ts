@@ -83,6 +83,16 @@ export async function subirArchivo(datos: Uint8Array, nombre: string, tipo: stri
 
 // El campo archivo guarda uno solo: el invoice nuevo reemplaza al anterior (el historial queda en la base).
 export async function guardarEnCampo(leadId: number, campoId: number, archivo: ArchivoKommo) {
+	try {
+		await guardarValor(leadId, campoId, archivo);
+	} catch (e) {
+		// Kommo rechaza un field_id que no existe en los leads (campo borrado, id de otra cuenta, KOMMO_CAMPO_INVOICE viejo).
+		if (e instanceof ErrorKommo && e.status === 400 && /NotSupportedChoice[^]*field_id/.test(e.message)) throw new ErrorKommo(e.message, 400, `el campo ${campoId} no existe en los leads de Kommo`);
+		throw e;
+	}
+}
+
+async function guardarValor(leadId: number, campoId: number, archivo: ArchivoKommo) {
 	await api(
 		`/api/v4/leads/${leadId}`,
 		json({

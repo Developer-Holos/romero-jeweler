@@ -2,6 +2,7 @@
 // Si Kommo falla, el PDF se devuelve igual y X-Kommo-Estado lo avisa.
 import { ErrorKommo, guardarEnCampo, kommoConfigurado, subirArchivo } from "#lib/server/widget/kommo.ts";
 import { htmlAPdf } from "#lib/server/widget/pdf.ts";
+import { log } from "#lib/server/widget/log.ts";
 import { fallo, leerJson, MB } from "#lib/server/widget/servicio.ts";
 import type { RequestHandler } from "./$types";
 
@@ -9,11 +10,12 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { html, lead_id, campo_id, nombre } = (await leerJson<{ html?: unknown; lead_id?: unknown; campo_id?: unknown; nombre?: unknown }>(request, 20 * MB)) ?? {};
 	if (typeof html !== "string" || !html.includes("<")) return fallo("Falta el HTML de la orden", 400);
 	const archivoNombre = typeof nombre === "string" && /^[\w.-]{1,80}\.pdf$/.test(nombre) ? nombre : "orden.pdf";
+	const contexto = { lead: lead_id ?? null, campo: campo_id ?? null, archivo: archivoNombre };
 	let pdf: Uint8Array;
 	try {
 		pdf = await htmlAPdf(html);
 	} catch (e) {
-		console.error("[pdf]", e);
+		log("error", "pdf", { ...contexto, tipo: "orden", error: e });
 		return fallo("No se pudo generar el PDF", 500);
 	}
 	let estado = "desactivado";
@@ -22,8 +24,9 @@ export const POST: RequestHandler = async ({ request }) => {
 		try {
 			await guardarEnCampo(lead_id as number, campo_id as number, await subirArchivo(pdf, archivoNombre, "application/pdf"));
 			estado = "guardado";
+			log("info", "orden", { ...contexto, estado, bytes_pdf: pdf.length });
 		} catch (e) {
-			console.error(`[kommo] orden del lead ${lead_id}:`, e);
+			log("error", "orden", { ...contexto, estado: "error", bytes_pdf: pdf.length, error: e });
 			estado = "error";
 			detalle = e instanceof ErrorKommo ? e.aviso : "No se pudo subir a Kommo";
 		}

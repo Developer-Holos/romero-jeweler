@@ -36,6 +36,7 @@ export function configurarDropbox(c: Partial<Config>) {
 	raizEquipo = null;
 }
 
+export const raizConfigurada = () => config.raiz;
 export const dropboxConfigurado = () => !!(config.appKey && config.appSecret && config.refreshToken);
 
 // "" es la raíz de Dropbox; si no, una ruta con "/" al principio y sin "/" al final.
@@ -178,8 +179,17 @@ export const carpetaDe = (archivo: ArchivoDropbox) => archivo.path_display.split
 
 // El webhook no trae los cambios: hay que pedirlos con el cursor guardado.
 export async function cursorInicial() {
-	return (await llamar<{ cursor: string }>("files/list_folder/get_latest_cursor", { path: config.raiz, recursive: true })).cursor;
+	try {
+		return (await llamar<{ cursor: string }>("files/list_folder/get_latest_cursor", { path: config.raiz, recursive: true })).cursor;
+	} catch (e) {
+		// Con la carpeta raíz inexistente no hay cursor posible: es la configuración, no un cursor viejo.
+		if (noExiste(e)) throw new Error(`DROPBOX_RAIZ "${config.raiz}" no existe en Dropbox`, { cause: e });
+		throw e;
+	}
 }
+
+// El cursor guardado ya no sirve: Dropbox lo reinició (`reset`) o la carpeta a la que apuntaba ya no existe (`path/not_found`).
+const cursorInvalido = (e: unknown) => e instanceof ErrorDropbox && e.status === 409 && /reset|path\/not_found/.test(e.resumen);
 
 // Videos completos que aparecieron desde el cursor, lo que se borró o movió (path_lower) y el cursor nuevo.
 export async function videosNuevos(cursor: string): Promise<{ videos: { orden: string; archivo: ArchivoDropbox }[]; borrados: string[]; cursor: string }> {
@@ -189,10 +199,10 @@ export async function videosNuevos(cursor: string): Promise<{ videos: { orden: s
 	try {
 		r = await llamar("files/list_folder/continue", { cursor });
 	} catch (e) {
-		if (!(e instanceof ErrorDropbox && e.status === 409 && /reset/.test(e.resumen))) throw e;
+		if (!cursorInvalido(e)) throw e;
 		// Dropbox invalidó el cursor: lo que cambió entre medio no se puede recuperar. Los videos de ese lapso se
 		// pasan a mano con POST /api/videos/:orden.
-		console.warn("[videos] Dropbox reinició el cursor: los cambios desde el último aviso se perdieron");
+		console.warn(`[videos] el cursor de Dropbox ya no sirve (${(e as ErrorDropbox).resumen}); se toma uno nuevo y los cambios desde el último aviso se perdieron`);
 		return { videos, borrados, cursor: await cursorInicial() };
 	}
 	for (;;) {
