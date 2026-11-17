@@ -35,5 +35,5 @@ export const variables = defineEnvVars({
   // Panel de entregas (/panel/entregas?clave=…) para el panel de control de Kommo. Sin PANEL_KEY no se puede abrir.
   PANEL_KEY: { schema: opcional, description: 'Clave que va en la URL del panel (?clave=). Sin ella, /panel responde 404' },
   KOMMO_CAMPO_ENTREGA: { schema: (v) => Number(opcional(v)) || 544100, description: 'Id del campo fecha "1. F. Entrega" (entrega estimada del lead)' },
-  KOMMO_EMBUDO_ENTREGAS: { schema: (v) => Number(opcional(v)) || 14639515, description: 'Embudo cuyas piezas cuenta el panel (Producción). Otros embudos pueden usar el mismo campo para otra fecha' }
+  KOMMO_EMBUDO_ENTREGAS: { schema: (v) => Number(opcional(v)) || 14639515, description: 'Embudo Producción: el panel cuenta sus piezas y el video del cliente solo se busca en sus leads. Otros embudos pueden usar el mismo campo para otra fecha' }
 });

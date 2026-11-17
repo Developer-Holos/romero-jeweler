@@ -134,7 +134,7 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
   se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
 - **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
-  orden es el **número de la orden pagada** y se compara con el campo "Order #" del lead (`#1146` = `1146`). Una orden se
+  orden es el **número de la orden pagada** y se compara con el campo "Order #" de los leads **del embudo Producción** (`KOMMO_EMBUDO_ENTREGAS`; `#1146` = `1146`). Una orden pagada tiene dos leads con ese Order #: el de Ventas (ganado, copia histórica) y el de Producción; el de Ventas se ignora, si no daría siempre "varios leads". Una orden se
   avisa una sola vez, también con varias réplicas: `avisado` se marca con un upsert atómico **antes** de lanzar el bot
   (`reclamar` en `videos.ts`) y se desmarca si el bot falla; para reenviar, borrar su fila. Una fila con `carpeta` (la de
   la orden) y sin `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada

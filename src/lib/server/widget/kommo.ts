@@ -31,9 +31,10 @@ export class ErrorKommo extends Error {
 }
 
 // La fija servicio.ts con las variables de entorno (y los tests, con un Kommo falso).
-let config = { url: "", token: "" };
-export function configurarKommo(url: string, token: string) {
-	config = { url: url.replace(/\/+$/, ""), token };
+// `embudo` es el de Producción: el video solo se busca en sus leads (el lead de Ventas queda como registro histórico).
+let config = { url: "", token: "", embudo: 0 };
+export function configurarKommo(url: string, token: string, embudo = 0) {
+	config = { url: url.replace(/\/+$/, ""), token, embudo };
 	driveUrl = null;
 }
 
@@ -199,15 +200,17 @@ export async function campoPorNombre(nombre: string) {
 }
 
 
-type LeadConValores = { id: number; custom_fields_values?: { field_id: number; values?: { value?: unknown }[] }[] | null };
+type LeadConValores = { id: number; pipeline_id?: number; custom_fields_values?: { field_id: number; values?: { value?: unknown }[] }[] | null };
 
-// Leads cuyo "Order #" es exactamente `orden`. La búsqueda de Kommo (query) es por texto en todos los campos, así
-// que se vuelve a comparar el campo.
+// Leads del embudo de Producción cuyo "Order #" es exactamente `orden`. Una orden pagada tiene dos leads con el mismo
+// Order #: el de Ventas (ganado, registro histórico) y el de Producción; solo el segundo cuenta. La búsqueda de Kommo
+// (query) es por texto en todos los campos, así que se vuelve a comparar el campo.
 export async function leadsPorOrden(orden: string): Promise<number[]> {
 	const campo = await campoPorNombre(CAMPO_ORDEN);
 	if (!campo) throw new ErrorKommo(`No existe el campo "${CAMPO_ORDEN}" (lo crea el widget en la pestaña Orden)`, 404);
 	const leads = await todos<LeadConValores>(`/api/v4/leads?query=${encodeURIComponent(orden)}`, "leads");
 	return leads
+		.filter((l) => !config.embudo || l.pipeline_id === config.embudo)
 		.filter((l) => l.custom_fields_values?.find((c) => c.field_id === campo.id)?.values?.some((v) => mismaOrden(String(v.value ?? ""), orden)))
 		.map((l) => l.id);
 }

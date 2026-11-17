@@ -21,6 +21,7 @@ const kommo = {
 	archivos: new Map<string, { nombre: string; tipo: string; datos: Buffer }>(),
 	lead: new Map<number, ValorCampo[]>(), // valores de campos por lead (cada PATCH los va sumando)
 	precios: new Map<number, number>(), // precio de cada lead
+	embudos: new Map<number, number>(), // embudo de cada lead; sin dato, Producción (14639515)
 	adjuntos: new Map<number, string[]>(),
 	notas: [] as { entity_id: number; params: { text: string } }[],
 	bots: [] as { bot_id: number; entity_id: number }[],
@@ -153,7 +154,7 @@ const falso = createServer(async (req, res) => {
 	if (url.pathname === "/api/v4/leads" && req.method === "GET") {
 		// query: busca el texto en cualquier campo del lead (como Kommo).
 		const q = url.searchParams.get("query") ?? "";
-		const leads = [...kommo.lead].filter(([, vs]) => vs.some((v) => v.values.some((x) => String(x.value).includes(q)))).map(([id, vs]) => ({ id, pipeline_id: 14639515, custom_fields_values: vs }));
+		const leads = [...kommo.lead].filter(([, vs]) => vs.some((v) => v.values.some((x) => String(x.value).includes(q)))).map(([id, vs]) => ({ id, pipeline_id: kommo.embudos.get(id) ?? 14639515, custom_fields_values: vs }));
 		if (!leads.length || url.searchParams.get("page") !== "1") return (res.writeHead(204), res.end());
 		return json({ _embedded: { leads } });
 	}
@@ -539,6 +540,29 @@ describe("video del cliente (Dropbox)", () => {
 		await webhook();
 		await pausa();
 		assert.equal(kommo.notas.length, notas);
+	});
+
+	it("solo cuentan los leads del embudo Producción: el de Ventas con el mismo Order # (copia histórica) se ignora", async () => {
+		const VENTAS = 14630839;
+		kommo.lead.set(7012, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
+		kommo.embudos.set(7012, VENTAS);
+		kommo.lead.set(7013, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
+		subirADropbox("/Ordenes/1152/1152_completo.mp4");
+		const enviados = kommo.bots.length;
+		const r = await (await app.request("/videos/1152", { method: "POST", headers: W })).json();
+		assert.notEqual(r.estado, "varios_leads"); // antes: dos leads con el mismo Order # = conflicto
+		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7013 });
+		assert.equal(kommo.bots.length, enviados + 1);
+		assert.ok(!kommo.notas.some((n) => n.entity_id === 7012), "el lead de Ventas no recibe nada");
+		kommo.bots.pop(); // los tests que siguen cuentan los bots lanzados
+
+		// Si solo existe el de Ventas, no hay lead al que avisar: queda pendiente.
+		kommo.lead.set(7014, [{ field_id: 801, values: [{ value: "1153" as never }] }]);
+		kommo.embudos.set(7014, VENTAS);
+		subirADropbox("/Ordenes/1153/1153_completo.mp4");
+		const sinLead = await (await app.request("/videos/1153", { method: "POST", headers: W })).json();
+		assert.equal(sinLead.estado, "sin_lead");
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7014));
 	});
 
 	it("un video sin lead queda pendiente y se envía cuando aparece el Order #", async () => {

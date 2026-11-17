@@ -64,8 +64,8 @@ export async function revisarVideo(db: Db, orden: string, opciones: { archivo?: 
 			// una sola vez por cada combinación de leads, para que lo resuelva un asesor.
 			const ids = [...leads].sort((a, b) => a - b).join(",");
 			if (leads.length > 1 && previo?.leads_notados !== ids)
-				for (const lead of leads) await agregarNota(lead, `El video de la orden ${orden} está listo en Dropbox, pero hay ${leads.length} leads con ese Order #. No se envió.`);
-			else if (!leads.length) log("warn", "videos", { orden, aviso: "el video está listo, pero ningún lead tiene ese Order # (se reintenta)" });
+				for (const lead of leads) await agregarNota(lead, `El video de la orden ${orden} está listo en Dropbox, pero hay ${leads.length} leads de Producción con ese Order #. No se envió.`);
+			else if (!leads.length) log("warn", "videos", { orden, aviso: "el video está listo, pero ningún lead del embudo Producción tiene ese Order # (se reintenta)" });
 			await guardarPendiente(db, orden, carpeta, leads.length > 1 ? ids : undefined);
 			return { estado: leads.length ? "varios_leads" : "sin_lead", leads, link: null };
 		}

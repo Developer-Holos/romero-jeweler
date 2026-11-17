@@ -11,7 +11,7 @@ import { cerrarNavegador } from "./pdf.ts";
 
 export { env };
 
-configurarKommo(env.KOMMO_BASE_URL ?? (env.KOMMO_SUBDOMAIN ? `https://${env.KOMMO_SUBDOMAIN}.kommo.com` : ""), env.KOMMO_ACCESS_TOKEN);
+configurarKommo(env.KOMMO_BASE_URL ?? (env.KOMMO_SUBDOMAIN ? `https://${env.KOMMO_SUBDOMAIN}.kommo.com` : ""), env.KOMMO_ACCESS_TOKEN, env.KOMMO_EMBUDO_ENTREGAS);
 configurarDropbox({
 	api: env.DROPBOX_API_URL,
 	appKey: env.DROPBOX_APP_KEY ?? "",
