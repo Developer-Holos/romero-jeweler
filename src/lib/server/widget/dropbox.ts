@@ -87,10 +87,14 @@ async function llamar<T>(ruta: string, cuerpo: unknown, conRaiz = true): Promise
 	throw new ErrorDropbox(`Dropbox respondió ${res.status} en /2/${ruta}: ${texto.slice(0, 300)}`, res.status, resumen);
 }
 
-// En una cuenta de equipo, sin Dropbox-API-Path-Root las carpetas del equipo no se ven.
+// En una cuenta de equipo, sin Dropbox-API-Path-Root las carpetas del equipo no se ven. Dropbox no siempre la declara `team`
+// (la de Holos responde `user`): lo que cuenta es que el espacio raíz sea distinto del personal.
+type InfoRaiz = { ".tag": string; root_namespace_id: string; home_namespace_id?: string };
+export const espacioRaiz = (r: InfoRaiz) => (r[".tag"] === "team" || (r.home_namespace_id && r.root_namespace_id !== r.home_namespace_id) ? r.root_namespace_id : null);
+
 function raizDelEquipo() {
-	raizEquipo ??= llamar<{ root_info: { ".tag": string; root_namespace_id: string } }>("users/get_current_account", null, false)
-		.then((c) => (c.root_info[".tag"] === "team" ? c.root_info.root_namespace_id : null))
+	raizEquipo ??= llamar<{ root_info: InfoRaiz }>("users/get_current_account", null, false)
+		.then((c) => espacioRaiz(c.root_info))
 		.catch((e) => {
 			raizEquipo = null;
 			throw e;

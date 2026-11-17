@@ -145,7 +145,8 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   En "Video (link)" va el link de la **carpeta** de la orden, no el del archivo (a veces hay varios formatos); se avisa
   con el primer `_completo`. Se pide público y falla si el equipo no lo permite. El cliente ve todo lo de esa carpeta.
   El webhook de Dropbox va sin `X-Widget-Key` (lo protege la firma); el CSRF de SvelteKit ya no corta `text/plain` (ver webhooks de Kommo). `search_v2` tarda en indexar: con
-  `DROPBOX_RAIZ` se va directo a la carpeta. "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
+  `DROPBOX_RAIZ` se va directo a la carpeta. En una cuenta de equipo la ruta va **desde el espacio raíz** (en la de Holos:
+  `/Yanrr0926 Team Folder/New`, no `/New`); la app manda `Dropbox-API-Path-Root` siempre que ese espacio sea distinto del personal (`espacioRaiz`). "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
   crea); la API busca el primero por nombre, el segundo lo marca el Salesbot.
 - **Webhooks de Kommo (seguimientos)**: Kommo no firma sus webhooks y se decidió **no ponerles clave**: cualquiera que conozca
   la URL puede inyectar mensajes o disparar un seguimiento (gasto de OpenAI y el bot en un lead); el índice único por lead,
