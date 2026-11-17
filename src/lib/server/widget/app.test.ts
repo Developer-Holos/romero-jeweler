@@ -255,6 +255,16 @@ describe("panel de entregas", () => {
 		const datos = await fetch(`http://127.0.0.1:${PUERTO}/panel/entregas/__data.json?clave=clave-panel`, { headers: { "Sec-Fetch-Dest": "empty" } });
 		assert.equal(datos.status, 200);
 	});
+
+	it("el botón de actualizar (?r=) vuelve a leer Kommo, pero no más seguido que cada 10 s", async () => {
+		kommo.lead.set(990002, [{ field_id: 544152, values: [{ value: (Math.floor(Date.now() / 1000) + 5 * 86_400) as unknown as Record<string, unknown> }] }]);
+		// Se leyó hace un momento: sin `?r=` se usa lo recordado, y con `?r=` demasiado pronto también.
+		assert.doesNotMatch(await (await panel("?clave=clave-panel", "iframe")).text(), /Lead #990002/);
+		assert.doesNotMatch(await (await panel("?clave=clave-panel&r=1", "iframe")).text(), /Lead #990002/);
+		await new Promise((listo) => setTimeout(listo, 10_200));
+		assert.doesNotMatch(await (await panel("?clave=clave-panel", "iframe")).text(), /Lead #990002/);
+		assert.match(await (await panel("?clave=clave-panel&r=2", "iframe")).text(), /Lead #990002/);
+	});
 });
 
 describe("modelo de IA", () => {

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 
 	type Pieza = PageProps['data']['resumen']['sinFecha'][number];
@@ -88,6 +89,24 @@
 	let sinMovimiento = $state(false);
 	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: resumen.zona }).format(resumen.actualizado));
 	const hace = $derived(Math.max(0, Math.floor((ahora - resumen.actualizado) / 60_000)));
+
+	// Botón "actualizar": `?r=` le pide al servidor que lea Kommo de nuevo en vez de usar lo recordado. Después se quita de
+	// la URL, para que las recargas de cada minuto no vuelvan a forzar la lectura.
+	let leyendo = $state(false);
+	async function refrescar() {
+		if (leyendo) return;
+		leyendo = true;
+		try {
+			const url = new URL(page.url.href);
+			url.searchParams.set('r', String(Date.now()));
+			const opciones = { replaceState: true, noScroll: true, keepFocus: true };
+			await goto(url, opciones);
+			url.searchParams.delete('r');
+			await goto(url, opciones);
+		} finally {
+			leyendo = false;
+		}
+	}
 	onMount(() => {
 		sinMovimiento = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		const reloj = setInterval(() => (ahora = Date.now()), 20_000);
@@ -123,6 +142,9 @@
 			<p class="estado" title="Se actualiza sola cada minuto">
 				<span class="pulso" aria-hidden="true"></span>
 				Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}
+				<button type="button" class="refrescar" class:leyendo onclick={refrescar} disabled={leyendo} aria-label="Actualizar ahora" title="Actualizar ahora">
+					<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" /><path d="M13.5 2v3h-3" /></svg>
+				</button>
 			</p>
 		</div>
 	</header>
@@ -291,6 +313,32 @@
 		gap: 6px;
 		color: var(--suave);
 		font: 11px var(--mono);
+	}
+	.refrescar {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border: 1px solid var(--linea);
+		border-radius: 50%;
+		background: #fff;
+		color: var(--suave);
+		cursor: pointer;
+		transition: color 0.15s, border-color 0.15s;
+	}
+	.refrescar:hover:not(:disabled) {
+		color: var(--tinta);
+		border-color: var(--tinta);
+	}
+	.refrescar:focus-visible {
+		outline: 2px solid var(--oro);
+		outline-offset: 2px;
+	}
+	.refrescar:disabled {
+		cursor: progress;
+	}
+	.leyendo svg {
+		animation: girar 0.8s linear infinite;
 	}
 	.pulso {
 		width: 6px;
@@ -635,6 +683,11 @@
 			background: var(--ambar-suave);
 		}
 	}
+	@keyframes girar {
+		to {
+			transform: rotate(360deg);
+		}
+	}
 	@keyframes pulso {
 		50% {
 			opacity: 0.35;
@@ -643,6 +696,7 @@
 	@media (prefers-reduced-motion: reduce) {
 		.gema,
 		.pulso,
+		.leyendo svg,
 		li.marcada {
 			animation: none;
 		}

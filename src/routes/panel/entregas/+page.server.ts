@@ -12,6 +12,8 @@ const resumir = (leads: LeadResumen[], etapas: Map<number, string>, usuarios: Ma
 // Kommo puede recargar el panel seguido; se recuerda 2 minutos para no recorrer los leads en cada carga. Mientras se lee,
 // los demás pedidos esperan esa misma lectura en vez de empezar otra.
 const RECORDAR = 120_000;
+// El botón "actualizar" (`?r=`) salta lo recordado, pero no más seguido que esto: así nadie martilla a Kommo.
+const MIN_REFRESCO = 10_000;
 type Lectura = { resumen: ResumenEntregas; incompleto: boolean };
 let recordado: { hasta: number; lectura: Promise<Lectura> } | null = null;
 
@@ -24,8 +26,10 @@ async function leer() {
 	return { resumen, incompleto: leads.length >= MAX_RESULTADOS };
 }
 
-function lectura() {
-	if (recordado && recordado.hasta > Date.now()) return recordado.lectura;
+function lectura(forzar: boolean) {
+	// `hasta` es Infinity mientras se lee: esa lectura está en curso y se comparte, aunque se pida forzar.
+	const reciente = recordado && recordado.hasta - RECORDAR > Date.now() - MIN_REFRESCO;
+	if (recordado && recordado.hasta > Date.now() && !(forzar && !reciente)) return recordado.lectura;
 	// Mientras se lee no vence; los 2 minutos se cuentan desde que terminó, aunque Kommo tarde.
 	const actual = { hasta: Infinity, lectura: leer() };
 	recordado = actual;
@@ -44,7 +48,7 @@ export const load = async ({ url }) => {
 	// `?demo` en `vite dev`: datos de ejemplo, para ver el panel sin Kommo. En producción no existe.
 	if (dev && url.searchParams.has('demo')) return { resumen: resumir(leadsDemo(env.KOMMO_CAMPO_ENTREGA), ETAPAS_DEMO, USUARIOS_DEMO), incompleto: false, kommo };
 	try {
-		return { ...(await lectura()), kommo };
+		return { ...(await lectura(url.searchParams.has('r'))), kommo };
 	} catch (e) {
 		console.error('[entregas] no se pudo leer Kommo:', e);
 		// En `vite dev` se ve la causa en la página; en producción, solo en el log.
