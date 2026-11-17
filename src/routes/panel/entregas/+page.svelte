@@ -90,19 +90,26 @@
 	const hora = $derived(new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit', timeZone: resumen.zona }).format(resumen.actualizado));
 	const hace = $derived(Math.max(0, Math.floor((ahora - resumen.actualizado) / 60_000)));
 
-	// Botón "actualizar": `?r=` le pide al servidor que lea Kommo de nuevo en vez de usar lo recordado. Después se quita de
-	// la URL, para que las recargas de cada minuto no vuelvan a forzar la lectura.
+	// Botón "actualizar": `?actualizar` le pide al servidor que lea Kommo de nuevo en vez de usar lo recordado. Después se
+	// quita de la URL, para que las recargas de cada minuto no vuelvan a forzar la lectura. Si el servidor se negó (leyó hace
+	// menos de 10 s) o Kommo falló, la hora no cambia: se avisa para que no parezca que el botón no hace nada.
 	let leyendo = $state(false);
+	let alDia = $state(false);
 	async function refrescar() {
 		if (leyendo) return;
 		leyendo = true;
+		const antes = resumen.actualizado;
 		try {
 			const url = new URL(page.url.href);
-			url.searchParams.set('r', String(Date.now()));
+			url.searchParams.set('actualizar', '');
 			const opciones = { replaceState: true, noScroll: true, keepFocus: true };
 			await goto(url, opciones);
-			url.searchParams.delete('r');
+			url.searchParams.delete('actualizar');
 			await goto(url, opciones);
+			if (resumen.actualizado === antes) {
+				alDia = true;
+				setTimeout(() => (alDia = false), 3000);
+			}
 		} finally {
 			leyendo = false;
 		}
@@ -139,9 +146,9 @@
 					</select>
 				</label>
 			{/if}
-			<p class="estado" title="Se actualiza sola cada minuto">
+			<p class="estado" title="Se actualiza sola cada minuto" aria-live="polite">
 				<span class="pulso" aria-hidden="true"></span>
-				Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}
+				{#if alDia}Ya está al día · {hora}{:else}Actualizado {hace < 1 ? `a las ${hora}` : `hace ${hace} min`}{/if}
 				<button type="button" class="refrescar" class:leyendo onclick={refrescar} disabled={leyendo} aria-label="Actualizar ahora" title="Actualizar ahora">
 					<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" /><path d="M13.5 2v3h-3" /></svg>
 				</button>

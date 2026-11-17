@@ -325,7 +325,10 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
   puede leerla con `curl`: la clave es lo que de verdad la protege. `Referrer-Policy: no-referrer` para que no se filtre.
 - **Datos**: se piden a Kommo solo los leads del embudo (`filter[pipeline_id]`, verificado con la cuenta real) y se filtra en
   memoria por fecha y etapa. Tope de 5000 leads (`todos` en `kommo.ts` avisa en el log si se llega). Se recuerda 2 minutos y
-  varias cargas a la vez comparten la misma lectura.
+  varias cargas a la vez comparten la misma lectura (`recordar` en `recuerdo.ts`). El botón de actualizar a mano pide
+  `?actualizar` y salta lo recordado, pero no más seguido que cada 10 s (para no martillar a Kommo, global entre todos los
+  visores); si esa lectura falla, el panel sigue mostrando lo anterior, y si el servidor se negó por el límite, el botón avisa
+  "Ya está al día".
 - **Solo Producción** (`KOMMO_EMBUDO_ENTREGAS`): el campo se llama "Fecha evento" y otros embudos podrían usarlo para la fecha
   de la boda o del evento.
 - **En riesgo**: entrega en 14 días o menos y todavía en una etapa anterior a Fundición. Regla inicial, a confirmar con el taller.
