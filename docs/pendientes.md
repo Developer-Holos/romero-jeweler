@@ -1,0 +1,3 @@
+- Hacer widget que muestre los anillos más próximos
+- Al pasar un lead de nuevo a una etapa donde se reasigne el responsable, ¿el bot debe reasignar al mismo usuario?
+- Ejemplos de seguimiento para que la IA los tome como ejemplos

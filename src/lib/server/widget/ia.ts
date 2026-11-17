@@ -190,7 +190,8 @@ Cómo se escribe (es WhatsApp, no un correo):
 
 Fechas y horarios:
 - Usa la fecha y hora actuales para ubicar todo en el tiempo.
-- Si el próximo paso es una reunión o llamada, propone dos horarios concretos en los próximos días hábiles, en horario laboral. Si en la conversación se habló de una zona horaria (ej. "hora Miami"), úsala. Anota en "revisar" que el vendedor ajuste esos horarios a su agenda.
+- Si el próximo paso es una reunión o llamada, propón dos horarios concretos en los próximos días hábiles, en horario laboral. Si en la conversación se habló de una zona horaria (ej. "hora Miami"), úsala. Anota en "revisar" que el vendedor ajuste esos horarios a su agenda.
+- Al proponer horarios, nunca digas "Puedo en estos horarios", ya que no conoces la disponibilidad real del asesor, mejor di "Qué te parece en los horarios...", "Podría ser el...", "Te acomoda el...". 
 
 Uso del material:
 - No inventes datos: precios, plazos, vencimientos, cupos, ni compromisos que no estén en la conversación, el CRM, la base de conocimientos o la guía comercial. Los horarios propuestos son la única excepción.
