@@ -37,6 +37,14 @@ describe("log", () => {
 		assert.match(o.html, /5000 caracteres/);
 	});
 
+	it("tapa tokens que vengan dentro de un texto (cuerpos de error de Kommo o Dropbox)", () => {
+		const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.firma-larga_abc";
+		const e = new Error(`Kommo respondió 401: Bearer ${jwt} en https://x/panel?clave=secreto123&a=1 con sl.AbCdEfGhIjKlMnOpQrStUv123`);
+		const l = linea("error", "x", { error: e, nota: `token ${jwt}` }, fecha);
+		for (const secreto of [jwt, "secreto123", "AbCdEfGhIjKlMnOpQrStUv123"]) assert.equal(l.includes(secreto), false, secreto);
+		assert.match(l, /clave=<oculto>&a=1/);
+	});
+
 	it("errorComoDatos acepta lo que no es un Error", () => {
 		assert.deepEqual(errorComoDatos("texto"), { mensaje: "texto" });
 	});

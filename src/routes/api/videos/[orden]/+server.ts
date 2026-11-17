@@ -3,6 +3,7 @@
 import { json } from "@sveltejs/kit";
 import { dropboxConfigurado, ErrorDropbox, videoDeOrden } from "#lib/server/widget/dropbox.ts";
 import { ErrorKommo } from "#lib/server/widget/kommo.ts";
+import { log } from "#lib/server/widget/log.ts";
 import { db, env, fallo } from "#lib/server/widget/servicio.ts";
 import { ordenValida, registroVideo, revisarVideo } from "#lib/server/widget/videos.ts";
 import type { RequestHandler } from "./$types";
@@ -12,7 +13,7 @@ const conErrores = async (fn: () => Promise<Response>) => {
 		return await fn();
 	} catch (e) {
 		if (e instanceof ErrorDropbox || e instanceof ErrorKommo) {
-			console.error("[videos]", e.message);
+			log("error", "videos_api", { error: e }); // la orden va en la línea de la petición
 			return fallo(e instanceof ErrorKommo ? e.aviso : `Dropbox respondió ${e.status}`, 502);
 		}
 		throw e;

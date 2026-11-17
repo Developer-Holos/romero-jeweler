@@ -9,6 +9,7 @@
 // del lead lo ven como "seguimiento anterior".
 import { datosRelevantes } from "./contexto-lead.ts";
 import type { Db } from "./db.ts";
+import { log } from "./log.ts";
 import { redactarSeguimiento, type ContextoSeguimiento, type SeguimientoPrevio } from "./ia.ts";
 import { agregarNota, guardarTexto, lanzarBot, leerLead } from "./kommo.ts";
 import { leerConversacion } from "./mensajes.ts";
@@ -45,7 +46,7 @@ async function seguimientosPrevios(db: Db, lead: number): Promise<SeguimientoPre
 
 async function armarContexto(db: Db, lead: number, dia: number): Promise<ContextoSeguimiento> {
 	// Los campos del lead son un extra: si Kommo no los da, el seguimiento sale igual con el chat.
-	const sinCampos = (e: unknown) => (console.warn(`[seguimientos] lead ${lead}: no se pudieron leer los campos, sigue sin ellos:`, e), { precio: 0, campos: [] });
+	const sinCampos = (e: unknown) => (log("warn", "seguimiento", { lead, aviso: "no se pudieron leer los campos, sigue sin ellos", error: e }), { precio: 0, campos: [] });
 	const [conversacion, datosLead, previos] = await Promise.all([leerConversacion(db, lead), leerLead(lead).catch(sinCampos), seguimientosPrevios(db, lead)]);
 	return { dia, datos: datosRelevantes(datosLead), mensajes: conversacion.mensajes, previos };
 }
@@ -63,7 +64,6 @@ export async function procesarSeguimiento(db: Db, id: number, config: ConfigSegu
 	const fila = rows[0];
 	if (!fila) return; // otro proceso lo tiene, o ya terminó
 	const lead = Number(fila.lead_id);
-	const etiqueta = `lead ${lead} día ${fila.dia} (intento ${fila.intentos}/${MAX_INTENTOS})`;
 	try {
 		let mensaje = fila.mensaje;
 		if (!mensaje) {
@@ -71,28 +71,28 @@ export async function procesarSeguimiento(db: Db, id: number, config: ConfigSegu
 			const contexto = await armarContexto(db, lead, fila.dia);
 			mensaje = await redactarSeguimiento(contexto, config.modelo, config.apiKey);
 			await db.query("update seguimientos set mensaje = $2 where id = $1", [id, mensaje]);
-			console.log(`[seguimientos] ${etiqueta}: mensaje generado (${contexto.mensajes.length} mensajes del chat, ${contexto.previos.length} seguimientos previos, campos del lead: ${contexto.datos.map((d) => d.nombre).join(", ") || "ninguno"})`);
+			log("info", "seguimiento", { lead, dia: fila.dia, intento: fila.intentos, estado: "mensaje generado", mensajes_chat: contexto.mensajes.length, previos: contexto.previos.length, campos: contexto.datos.map((d) => d.nombre) });
 		}
 		await guardarTexto(lead, config.campo, mensaje);
 		await lanzarBot(config.bot, lead);
 		await db.query("update seguimientos set estado = 'enviado', error = null, tomado = null, actualizado = now() where id = $1", [id]);
-		console.log(`[seguimientos] ${etiqueta}: enviado`);
+		log("info", "seguimiento", { lead, dia: fila.dia, intento: fila.intentos, estado: "enviado" });
 	} catch (e) {
 		const error = e instanceof Error ? e.message : String(e);
 		const fallido = fila.intentos >= MAX_INTENTOS;
 		await db.query("update seguimientos set estado = $2, error = $3, tomado = null, actualizado = now() where id = $1", [id, fallido ? "fallido" : "pendiente", error.slice(0, 500)]).catch(() => {});
-		console.error(`[seguimientos] ${etiqueta}: ${fallido ? "se rindió" : "falló, se reintenta"}:`, e);
-		if (fallido) await agregarNota(lead, `No se pudo enviar el seguimiento del día ${fila.dia}: ${error.slice(0, 200)}`).catch((n) => console.error(`[seguimientos] ${etiqueta}: tampoco se pudo dejar la nota:`, n));
+		log("error", "seguimiento", { lead, dia: fila.dia, intento: fila.intentos, estado: fallido ? "se rindió" : "falló, se reintenta", error: e });
+		if (fallido) await agregarNota(lead, `No se pudo enviar el seguimiento del día ${fila.dia}: ${error.slice(0, 200)}`).catch((n) => log("error", "seguimiento", { lead, dia: fila.dia, aviso: "tampoco se pudo dejar la nota", error: n }));
 	}
 }
 
 async function reintentarPendientes(db: Db, config: () => Promise<ConfigSeguimiento>) {
 	const { rows } = await db.query<{ id: number }>("select id from seguimientos where estado = 'pendiente' and creado > now() - interval '48 hours' order by id");
-	if (rows.length) console.log(`[seguimientos] repaso: ${rows.length} pendientes`);
+	if (rows.length) log("info", "seguimiento_repaso", { pendientes: rows.length });
 	for (const r of rows) await procesarSeguimiento(db, r.id, await config());
 }
 
 // Repaso periódico: recoge lo que quedó a medias (reinicio, Kommo u OpenAI caídos).
 export function iniciarSeguimientos(db: Db, config: () => Promise<ConfigSeguimiento>) {
-	setInterval(() => reintentarPendientes(db, config).catch((e) => console.error("[seguimientos] repaso:", e)), REPASO).unref();
+	setInterval(() => reintentarPendientes(db, config).catch((e) => log("error", "seguimiento_repaso", { error: e })), REPASO).unref();
 }

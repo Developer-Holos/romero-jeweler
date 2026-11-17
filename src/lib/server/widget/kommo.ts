@@ -15,6 +15,7 @@
 //   GET/POST /api/v4/leads/custom_fields        → campos (los de imágenes son de tipo "file")
 import { MAX_ARCHIVO } from "../../invoice/servidor.ts";
 import { mismaOrden } from "./dropbox.ts";
+import { log } from "./log.ts";
 
 export type ArchivoKommo = { uuid: string; version_uuid: string; nombre: string; tamano: number; tipo: string };
 
@@ -126,7 +127,7 @@ async function todos<T>(ruta: string, clave: string): Promise<T[]> {
 		const cuerpo = (await res.json()) as { _embedded?: Record<string, T[]>; _links?: { next?: unknown } };
 		items.push(...(cuerpo._embedded?.[clave] ?? []));
 		if (!cuerpo._links?.next) break;
-		if (pagina === MAX_PAGINAS) console.warn(`[kommo] ${ruta}: más de ${MAX_PAGINAS * 250} resultados, el resto no se leyó`);
+		if (pagina === MAX_PAGINAS) log("warn", "kommo_listado", { ruta, aviso: `más de ${MAX_PAGINAS * 250} resultados, el resto no se leyó` });
 	}
 	return items;
 }

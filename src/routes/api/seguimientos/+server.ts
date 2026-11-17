@@ -3,6 +3,7 @@
 // señal repetida el mismo día no envía de nuevo, pero sí reintenta un seguimiento que quedó pendiente.
 import { json } from "@sveltejs/kit";
 import { DIAS_SEGUIMIENTO } from "#lib/server/widget/ia.ts";
+import { log } from "#lib/server/widget/log.ts";
 import { db, fallo, seguimientoConfig } from "#lib/server/widget/servicio.ts";
 import { leadDeLaSenal, procesarSeguimiento, registrarSeguimiento } from "#lib/server/widget/seguimientos.ts";
 import type { RequestHandler } from "./$types";
@@ -15,7 +16,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
   if (!lead) return fallo("El webhook no trae el lead (leads[…][0][id])", 400);
   const base = await db();
   const { id, estado, nuevo } = await registrarSeguimiento(base, lead, dia);
-  console.log(`[seguimientos] señal: lead ${lead} día ${dia} → ${nuevo ? "nuevo" : `ya existía (${estado})`}`);
-  if ((estado === "pendiente") || estado === "enviado") procesarSeguimiento(base, id, await seguimientoConfig()).catch((e) => console.error(`[seguimientos] lead ${lead}:`, e));
+  log("info", "seguimiento_senal", { lead, dia, nuevo, estado });
+  if ((estado === "pendiente") || estado === "enviado") procesarSeguimiento(base, id, await seguimientoConfig()).catch((e) => log("error", "seguimiento", { lead, dia, error: e }));
   return json({ id, estado }, { status: 202 });
 };

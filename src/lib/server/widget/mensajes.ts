@@ -4,6 +4,7 @@
 import { promisify } from "node:util";
 import { brotliCompress, brotliCompressSync, brotliDecompress, constants } from "node:zlib";
 import type { Db } from "./db.ts";
+import { log } from "./log.ts";
 
 // [fecha en segundos, "c" (cliente) | "a" (asesor), texto, id del mensaje en Kommo]
 type Entrada = [number, "c" | "a", string, string];
@@ -57,7 +58,7 @@ export async function guardarMensajes(db: Db, mensajes: Mensaje[]) {
 			await tx.query("update conversaciones set datos = $2, cantidad = $3, actualizado = now() where lead_id = $1", [lead, datos, todo.length]);
 			return { total: todo.length, bytes: datos.length, agregados: sumar.length };
 		});
-		console.log(`[mensajes] lead ${lead}: +${agregados} (total ${total}, ${bytes} bytes)`);
+		log("info", "mensajes", { lead, agregados, total, bytes });
 	}
 }
 

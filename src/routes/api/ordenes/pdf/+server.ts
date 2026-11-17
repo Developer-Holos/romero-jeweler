@@ -10,7 +10,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const { html, lead_id, campo_id, nombre } = (await leerJson<{ html?: unknown; lead_id?: unknown; campo_id?: unknown; nombre?: unknown }>(request, 20 * MB)) ?? {};
 	if (typeof html !== "string" || !html.includes("<")) return fallo("Falta el HTML de la orden", 400);
 	const archivoNombre = typeof nombre === "string" && /^[\w.-]{1,80}\.pdf$/.test(nombre) ? nombre : "orden.pdf";
-	const contexto = { lead: lead_id ?? null, campo: campo_id ?? null, archivo: archivoNombre };
+	const contexto = { lead: lead_id ?? null, campo: campo_id ?? null, origen_campo: "widget", archivo: archivoNombre };
 	let pdf: Uint8Array;
 	try {
 		pdf = await htmlAPdf(html);
@@ -31,6 +31,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			detalle = e instanceof ErrorKommo ? e.aviso : "No se pudo subir a Kommo";
 		}
 	}
+	if (estado === "desactivado") log("warn", "orden", { ...contexto, estado, motivo: kommoConfigurado() ? "faltan lead_id o campo_id válidos" : "Kommo no configurado" });
 	return new Response(pdf as Uint8Array<ArrayBuffer>, {
 		headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${archivoNombre}"`, "X-Kommo-Estado": estado, "X-Kommo-Detalle": detalle },
 	});

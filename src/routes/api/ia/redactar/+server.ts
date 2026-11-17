@@ -1,5 +1,6 @@
 import { json } from "@sveltejs/kit";
 import { redactar, type PedidoRedaccion } from "#lib/server/widget/ia.ts";
+import { log } from "#lib/server/widget/log.ts";
 import { env, fallo, leerJson, modeloIa } from "#lib/server/widget/servicio.ts";
 import type { RequestHandler } from "./$types";
 
@@ -10,7 +11,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		return json(await redactar(p, await modeloIa(), env.OPENAI_API_KEY));
 	} catch (e) {
-		console.error("[ia]", e);
+		log("error", "ia", { operacion: "redactar", error: e });
 		return fallo("La IA no respondió", 502);
 	}
 };

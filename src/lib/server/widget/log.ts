@@ -7,6 +7,16 @@ const SECRETO = /clave|key|token|secret|authorization|password|cookie/i;
 
 type Plano = Record<string, unknown>;
 
+// Los mensajes de error traen trozos de respuestas de Kommo o Dropbox: se tapan tokens (JWT, "Bearer …", "sl.…" de Dropbox) y
+// las claves tipo `clave=…` de una URL por si alguna llegara ahí.
+const ocultarSecretos = (t: string) =>
+	t
+		.replace(/\bBearer\s+[\w.~+/=-]+/gi, "Bearer <oculto>")
+		.replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, "<jwt oculto>")
+		.replace(/\bsl\.[\w.-]{20,}/g, "<token oculto>")
+		.replace(/\b(clave|key|token|secret)=[^&\s"']+/gi, "$1=<oculto>");
+const recortar = (t: string) => (t.length > 1000 ? `${t.slice(0, 1000)}… (${t.length} caracteres)` : t);
+
 // Un error como datos: nombre, mensaje, status/resumen/aviso si los trae (ErrorKommo, ErrorDropbox), causa y stack en una cadena.
 export function errorComoDatos(e: unknown, profundidad = 0): Plano {
 	if (!(e instanceof Error)) return { mensaje: String(e) };
@@ -24,8 +34,8 @@ export function errorComoDatos(e: unknown, profundidad = 0): Plano {
 
 function limpiar(v: unknown, clave = ""): unknown {
 	if (SECRETO.test(clave)) return "<oculto>";
-	if (v instanceof Error) return errorComoDatos(v);
-	if (typeof v === "string") return v.length > 1000 ? `${v.slice(0, 1000)}… (${v.length} caracteres)` : v;
+	if (v instanceof Error) return limpiar(errorComoDatos(v));
+	if (typeof v === "string") return recortar(ocultarSecretos(v));
 	if (Array.isArray(v)) return v.slice(0, 20).map((x) => limpiar(x));
 	if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, limpiar(x, k)]));
 	return v;

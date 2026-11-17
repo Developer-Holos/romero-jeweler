@@ -4,6 +4,7 @@ import { dev } from '$app/env';
 import { ETAPAS_DEMO, USUARIOS_DEMO, leadsDemo } from '#lib/server/widget/entregas-demo.ts';
 import { resumirEntregas, type ResumenEntregas } from '#lib/server/widget/entregas.ts';
 import { MAX_RESULTADOS, leerEtapas, leerLeads, leerUsuarios, type LeadResumen } from '#lib/server/widget/kommo.ts';
+import { log } from '#lib/server/widget/log.ts';
 import { recordar } from '#lib/server/widget/recuerdo.ts';
 import { env } from '#lib/server/widget/servicio.ts';
 
@@ -22,7 +23,7 @@ async function leer() {
 	const vacio = () => new Map<number, string>();
 	const [leads, etapas, usuarios] = await Promise.all([leerLeads(env.KOMMO_EMBUDO_ENTREGAS), leerEtapas().catch(vacio), leerUsuarios().catch(vacio)]);
 	const resumen = resumir(leads, etapas, usuarios);
-	console.log(`[entregas] ${leads.length} leads, ${resumen.enCurso} en curso (${resumen.sinFecha.length} sin fecha)`);
+	log('info', 'entregas', { leads: leads.length, en_curso: resumen.enCurso, sin_fecha: resumen.sinFecha.length });
 	return { resumen, incompleto: leads.length >= MAX_RESULTADOS };
 }
 
@@ -30,7 +31,7 @@ const lectura = recordar<Lectura>(leer, {
 	duracion: RECORDAR,
 	minimoParaReleer: MINIMO_RELEER,
 	alFallarReleyendo: (e, copia) => {
-		console.error('[entregas] no se pudo actualizar desde Kommo; se sigue con la lectura anterior:', e);
+		log('error', 'entregas', { aviso: 'no se pudo actualizar desde Kommo; se sigue con la lectura anterior', error: e });
 		return { ...copia, fallo: true };
 	}
 });
@@ -42,7 +43,7 @@ export const load = async ({ url }) => {
 	try {
 		return { ...(await lectura(url.searchParams.has('actualizar'))), kommo };
 	} catch (e) {
-		console.error('[entregas] no se pudo leer Kommo:', e);
+		log('error', 'entregas', { aviso: 'no se pudo leer Kommo', error: e });
 		// En `vite dev` se ve la causa en la página; en producción, solo en el log.
 		error(502, dev ? `No se pudo leer Kommo: ${e instanceof Error ? e.message : e}` : 'No se pudo leer Kommo');
 	}

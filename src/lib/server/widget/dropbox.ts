@@ -10,6 +10,7 @@
 //   POST /2/sharing/create_shared_link_with_settings      → link permanente a la carpeta de la orden (get_temporary_link vence a las 4 h)
 //   POST /2/sharing/list_shared_links · modify_shared_link_settings → el link que ya existía, abierto al público
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { log } from "./log.ts";
 
 export type ArchivoDropbox = { ".tag": "file"; name: string; path_lower: string; path_display: string; size: number; server_modified: string; is_downloadable?: boolean };
 type Entrada = ArchivoDropbox | { ".tag": "folder" | "deleted"; name: string; path_lower: string; path_display: string };
@@ -189,30 +190,31 @@ export async function cursorInicial() {
 }
 
 // El cursor guardado ya no sirve: Dropbox lo reinició (`reset`) o la carpeta a la que apuntaba ya no existe (`path/not_found`).
-const cursorInvalido = (e: unknown) => e instanceof ErrorDropbox && e.status === 409 && /reset|path\/not_found/.test(e.resumen);
+const cursorInvalido = (e: unknown): e is ErrorDropbox => e instanceof ErrorDropbox && e.status === 409 && /reset|path\/not_found/.test(e.resumen);
 
 // Videos completos que aparecieron desde el cursor, lo que se borró o movió (path_lower) y el cursor nuevo.
 export async function videosNuevos(cursor: string): Promise<{ videos: { orden: string; archivo: ArchivoDropbox }[]; borrados: string[]; cursor: string }> {
 	const videos: { orden: string; archivo: ArchivoDropbox }[] = [];
 	const borrados: string[] = [];
-	let r: { entries: Entrada[]; cursor: string; has_more: boolean };
-	try {
-		r = await llamar("files/list_folder/continue", { cursor });
-	} catch (e) {
-		if (!cursorInvalido(e)) throw e;
-		// Dropbox invalidó el cursor: lo que cambió entre medio no se puede recuperar. Los videos de ese lapso se
-		// pasan a mano con POST /api/videos/:orden.
-		console.warn(`[videos] el cursor de Dropbox ya no sirve (${(e as ErrorDropbox).resumen}); se toma uno nuevo y los cambios desde el último aviso se perdieron`);
-		return { videos, borrados, cursor: await cursorInicial() };
-	}
+	let desde = cursor;
 	for (;;) {
+		let r: { entries: Entrada[]; cursor: string; has_more: boolean };
+		try {
+			r = await llamar("files/list_folder/continue", { cursor: desde });
+		} catch (e) {
+			if (!cursorInvalido(e)) throw e;
+			// Dropbox invalidó el cursor (también puede pasar a mitad de la lectura): lo que cambió entre medio no se puede
+			// recuperar. Los videos de ese lapso se pasan a mano con POST /api/videos/:orden.
+			log("warn", "videos_cursor", { aviso: "el cursor de Dropbox ya no sirve; se toma uno nuevo y se pierden los cambios desde el último aviso", resumen: e.resumen, raiz: config.raiz || "(todo Dropbox)" });
+			return { videos, borrados, cursor: await cursorInicial() };
+		}
 		for (const e of r.entries) {
 			if (e[".tag"] === "deleted") borrados.push(e.path_lower);
 			const v = comoVideo(e);
 			if (v) videos.push(v);
 		}
 		if (!r.has_more) return { videos, borrados, cursor: r.cursor };
-		r = await llamar("files/list_folder/continue", { cursor: r.cursor });
+		desde = r.cursor;
 	}
 }
 

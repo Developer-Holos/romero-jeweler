@@ -2,6 +2,7 @@
 // WIDGET_KEY está definida, el header X-Widget-Key (menos /api/salud, /api/admin, que tiene su propia clave, el
 // webhook de Dropbox, que va firmado, y los de Kommo —mensajes y señal de seguimiento—, que no pueden mandar el header).
 // /panel (panel de control de Kommo) va aparte: pide `?clave=` (ver `panel` abajo).
+import type { RequestEvent } from '@sveltejs/kit';
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit/hooks';
 import { dev } from '$app/env';
 import { dropboxConfigurado } from '#lib/server/widget/dropbox.ts';
@@ -16,14 +17,14 @@ export const init: ServerInit = async () => {
   try {
     iniciarSeguimientos(await db(), seguimientoConfig);
   } catch (e) {
-    console.error('[seguimientos] no se pudo iniciar:', e);
+    log('error', 'seguimientos_inicio', { error: e });
   }
   if (!dropboxConfigurado()) return;
   // Si falla (Postgres o Dropbox caídos), la app arranca igual: el cursor se toma con el primer aviso.
   try {
     await iniciarVideos(await db(), env.KOMMO_BOT_VIDEO);
   } catch (e) {
-    console.error('[videos] no se pudo iniciar:', e);
+    log('error', 'videos_inicio', { aviso: 'no se pudo iniciar', error: e });
   }
 };
 
@@ -51,7 +52,7 @@ const panel: Handle = async ({ event, resolve }) => {
   return res;
 };
 
-const manejar: Handle = async ({ event, resolve }) => {
+const conGuardia: Handle = async ({ event, resolve }) => {
   // Se decide con la ruta que SvelteKit reconoció (ya decodificada), no con la URL tal como llega:
   // `/%61pi/borradores/1` llega al handler de /api/borradores/[lead] y tiene que pasar por la misma guardia.
   const ruta: string = event.route.id ?? '';
@@ -73,22 +74,22 @@ const manejar: Handle = async ({ event, resolve }) => {
 // Una línea por petición a /api y /panel: ruta, parámetros, estado y duración. Nunca la URL completa (el panel lleva
 // `?clave=`) ni el cuerpo; `log` oculta además cualquier clave o token que aparezca en los datos.
 const SIN_LOG = new Set(['/api/salud']);
+// Qué petición es: lo mismo en la línea de cada petición y en la de un error no controlado.
+const cual = (event: RequestEvent) => ({ metodo: event.request.method, ruta: event.route.id ?? '', parametros: event.params });
 const LENTA_MS = 5000;
 export const handle: Handle = async ({ event, resolve }) => {
   const ruta = event.route.id ?? '';
-  if (event.request.method === 'OPTIONS' || SIN_LOG.has(ruta) || !(ruta.startsWith('/api/') || ruta.startsWith('/panel/'))) return manejar({ event, resolve });
+  if (event.request.method === 'OPTIONS' || SIN_LOG.has(ruta) || !(ruta.startsWith('/api/') || ruta.startsWith('/panel/'))) return conGuardia({ event, resolve });
   const inicio = Date.now();
-  let estado = 500; // si manejar lanza, la petición termina en 500
+  let estado = 500; // si conGuardia lanza, la petición termina en 500
   try {
-    const res = await manejar({ event, resolve });
+    const res = await conGuardia({ event, resolve });
     estado = res.status;
     return res;
   } finally {
     const ms = Date.now() - inicio;
     log(estado >= 500 ? 'error' : estado >= 400 || ms > LENTA_MS ? 'warn' : 'info', 'peticion', {
-      metodo: event.request.method,
-      ruta,
-      parametros: event.params,
+      ...cual(event),
       consulta: Object.fromEntries(event.url.searchParams),
       estado,
       ms,
@@ -102,5 +103,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 // ruta y el método y el stack en una sola línea. Sin devolver nada: SvelteKit conserva su respuesta de siempre.
 export const handleError: HandleServerError = ({ kind, error, event }) => {
   if (kind !== 'unknown') return;
-  log('error', 'error_no_controlado', { metodo: event.request.method, ruta: event.route.id, parametros: event.params, error });
+  log('error', 'error_no_controlado', { ...cual(event), error });
 };

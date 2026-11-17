@@ -3,6 +3,7 @@
 import { json } from "@sveltejs/kit";
 import { adjuntarALead, ErrorKommo, guardarEnCampo, imagenesDelLead, kommoConfigurado, subirArchivo } from "#lib/server/widget/kommo.ts";
 import { fallo, leadValido, MB } from "#lib/server/widget/servicio.ts";
+import { log } from "#lib/server/widget/log.ts";
 import { MAX_ARCHIVO } from "#lib/invoice/servidor.ts";
 import type { RequestHandler } from "./$types";
 
@@ -13,7 +14,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	try {
 		return json({ imagenes: await imagenesDelLead(id) });
 	} catch (e) {
-		console.error("[kommo]", e);
+		log("error", "imagenes_lead", { lead: params.lead, error: e });
 		return e instanceof ErrorKommo ? fallo(e.aviso, e.status === 413 ? 413 : 502) : fallo("Kommo no respondió", 502);
 	}
 };
@@ -32,7 +33,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		else await adjuntarALead(id, archivo.uuid);
 		return json({ uuid: archivo.uuid, nombre, campo });
 	} catch (e) {
-		console.error("[kommo]", e);
+		log("error", "imagenes_lead", { lead: params.lead, error: e });
 		return e instanceof ErrorKommo ? fallo(e.aviso, e.status === 413 ? 413 : 502) : fallo("Kommo no respondió", 502);
 	}
 };

@@ -33,7 +33,7 @@ const kommo = {
 type ArchivoFalso = { ".tag": "file" | "deleted"; name: string; path_lower: string; path_display: string; size?: number; server_modified?: string };
 // `cursorPerdido`: el cursor guardado apunta a una carpeta que ya no existe; list_folder/continue da 409 path/not_found (como
 // en producción) hasta que se pide un cursor nuevo.
-const dropbox = { cambios: [] as ArchivoFalso[], links: new Map<string, string>(), cursorPerdido: false };
+const dropbox = { cambios: [] as ArchivoFalso[], links: new Map<string, string>(), cursorPerdido: false, raizInexistente: false };
 const subirADropbox = (ruta: string) => {
 	const a: ArchivoFalso = { ".tag": "file", name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta, size: 1234, server_modified: "2026-11-03T12:00:00Z" };
 	dropbox.cambios.push(a);
@@ -56,6 +56,7 @@ const falso = createServer(async (req, res) => {
 			case "/2/users/get_current_account":
 				return json({ root_info: { ".tag": "user", root_namespace_id: "1", home_namespace_id: "1" } });
 			case "/2/files/list_folder/get_latest_cursor":
+				if (dropbox.raizInexistente) return json({ error: { ".tag": "path", path: { ".tag": "not_found" } }, error_summary: "path/not_found/" }, 409);
 				dropbox.cursorPerdido = false;
 				return json({ cursor: `c${dropbox.cambios.length}` });
 			case "/2/files/list_folder/continue": {
@@ -486,6 +487,26 @@ describe("video del cliente (Dropbox)", () => {
 		await webhook();
 		await esperar(() => kommo.bots.length === enviados + 1);
 		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7010 });
+		kommo.bots.pop(); // los tests que siguen cuentan los bots lanzados
+	});
+
+	it("aunque no se puedan leer los cambios de Dropbox, los avisos pendientes se reintentan", async () => {
+		// Un video sin lead queda pendiente...
+		subirADropbox("/Ordenes/1151/1151_completo.mp4");
+		await webhook();
+		await pausa();
+		// ...y después Dropbox deja de dar cambios (cursor perdido y la raíz ya no existe) mientras llega el Order #.
+		dropbox.cursorPerdido = true;
+		dropbox.raizInexistente = true;
+		kommo.lead.set(7011, [{ field_id: 801, values: [{ value: "1151" as never }] }]);
+		const enviados = kommo.bots.length;
+		await webhook();
+		await esperar(() => kommo.bots.length === enviados + 1);
+		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7011 });
+		dropbox.raizInexistente = false;
+		await webhook(); // con la raíz otra vez, el cursor se renueva solo
+		await pausa();
+		assert.equal(dropbox.cursorPerdido, false);
 		kommo.bots.pop(); // los tests que siguen cuentan los bots lanzados
 	});
 
