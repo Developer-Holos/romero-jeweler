@@ -347,9 +347,11 @@ lo que viene del invoice lleva la etiqueta "del invoice". "+ Otro…" avisa que 
 envío y el check de "video enviado".
 
 **Decidido:** el identificador es el **número de la orden pagada de Shopify** (carpeta `1146/`, video
-`1146_completo.mp4`, campo "Order #" del lead). El cliente recibe un **link compartido de Dropbox a la carpeta de la orden** (los videos pasan
+`1146_completo.mp4`, campo "Order #" del lead). El cliente recibe un **link compartido de Dropbox a `<orden>/Origen`** (los videos pasan
 de los 9 MB que acepta Kommo, y a veces se mandan varios formatos del mismo video). Cambio del 2026-11-06: antes era el
-link del archivo. La detección es por **webhook de Dropbox**.
+link del archivo. Cambio del 2026-11-18 (reunión con Romero): la carpeta de la orden tiene `Clip` (privado) y `Origen`
+(lo que se manda); la señal es `<orden>/Origen/<orden>_completo.*` y solo se comparte `Origen`. Se mantiene el aviso
+una sola vez (decidido). La detección es por **webhook de Dropbox**.
 
 **Hecho** (`src/lib/server/widget/dropbox.ts`, `videos.ts`, `src/routes/api/videos`):
 - Webhook firmado (`X-Dropbox-Signature`). Pide los cambios con `list_folder/continue` y el cursor guardado en
@@ -364,13 +366,17 @@ link del archivo. La detección es por **webhook de Dropbox**.
   en cada pasada (webhook o repaso cada 10 min) durante 30 días. Se usa la carpeta guardada, sin buscarla por nombre (con dos carpetas iguales podría elegir otra, y el índice de
   `search_v2` tarda). Así el video sale solo cuando un asesor llena el
   Order # después. Con varios leads, la nota se deja una vez por combinación de leads.
-- Con `DROPBOX_RAIZ`, el webhook solo acepta `<raiz>/<orden>/<orden>_completo.*` (lo mismo que mira `GET/POST`); sin
+- Con `DROPBOX_RAIZ`, el webhook solo acepta `<raiz>/<orden>/Origen/<orden>_completo.*` (lo mismo que mira `GET/POST`); sin
   ella, la carpeta de la orden puede estar a cualquier profundidad.
+- Un `<orden>_completo.*` que quede en la carpeta de la orden o en `Clip` (fuera de `Origen`) no envía nada: solo deja un
+  `warn` del evento `videos` en el log (`completoFueraDeOrigen`).
 - Se avisa con el primer `_completo`; los demás formatos ya están en la carpeta compartida (`GET /api/videos/:orden`
   lista los que hay en `videos`). Si se borra o mueve la **carpeta** de una orden ya enviada, se deja una nota en el
   lead (el link deja de abrir); borrar un solo video no la rompe.
-- **Riesgo aceptado:** el cliente ve todo lo que haya en la carpeta de la orden (invoice, orden de producción,
-  borradores). Mover los videos a una subcarpeta aparte lo evitaría; hoy se comparte la carpeta tal cual.
+- Desde el 2026-11-18 el cliente ve solo `<orden>/Origen`; `Clip` y lo demás de la orden no se comparte. **Riesgo
+  aceptado:** los links enviados antes (la carpeta entera de la orden) siguen abiertos; no hay forma de revocarlos desde la
+  app, habría que quitarlos en Dropbox. Una fila pendiente de antes, cuya orden aún no tiene `Origen`, se deja de reintentar
+  (queda un aviso `videos` en el log): se pasa a mano con `POST /api/videos/:orden` cuando exista `Origen`.
 - Si Dropbox reinicia el cursor (`reset`), lo que cambió entre medio se pierde: queda un aviso en el log y esos videos
   se pasan a mano con `POST /api/videos/:orden`.
 - `GET /api/videos/:orden` dice cómo está el video, sin efectos. `POST` lo revisa a mano (videos que ya estaban, o
@@ -386,7 +392,7 @@ link del archivo. La detección es por **webhook de Dropbox**.
 2. Salesbot "Enviar video": mensaje de WhatsApp con el link (texto que confirma Romero) y marcar "Video enviado". Su id
    va en `KOMMO_BOT_VIDEO`.
 3. Crear a mano en la pestaña Orden los campos "Video (link)" y "Video enviado".
-4. Prueba real: `PRUEBA/PRUEBA_completo.mp4` con "Order #" = PRUEBA en el lead de prueba **407872**.
+4. Prueba real: `PRUEBA/Origen/PRUEBA_completo.mp4` con "Order #" = PRUEBA en el lead de prueba **407872**.
 5. Hasta que llegue lo de Shopify, el "Order #" se llena a mano.
 
 ## Shopify: link de pago (pendiente)

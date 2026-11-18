@@ -1,5 +1,6 @@
 // Dropbox: dónde está el video de cada orden. Cada orden tiene su carpeta con el número de la orden pagada de
-// Shopify (`1146/`) y, cuando la edición termina, el video se llama `1146_completo.mp4`.
+// Shopify (`1146/`) y dentro dos subcarpetas: `Clip` (lo que se graba en el proceso, privado) y `Origen` (lo que ve el
+// cliente). Cuando la edición termina, se sube `1146/Origen/1146_completo.mp4`: esa es la señal. Solo se comparte `Origen`.
 //
 // Endpoints de la API v2 (docs.dropboxapi.com, verificados el 2026-11-03):
 //   POST /oauth2/token (grant_type=refresh_token)        → access token de vida corta
@@ -107,32 +108,43 @@ const noExiste = (e: unknown) => e instanceof ErrorDropbox && e.status === 409 &
 // ─── El video de una orden ──────────────────────────────────────────────────
 const EXTENSIONES = ["mp4", "mov", "m4v", "avi", "mkv"];
 
-// `1146_completo.mp4` dentro de la carpeta `1146`. Otro sufijo (`_completo_v2`, `_borrador`) no cuenta.
-export function esVideoCompleto(nombre: string, carpeta: string) {
+// Subcarpeta de la orden que se manda al cliente; el resto de la carpeta de la orden es privado.
+const CARPETA_CLIENTE = "Origen";
+const nombreDe = (ruta: string) => ruta.split("/").at(-1) ?? "";
+const esCarpetaCliente = (nombre: string) => nombre.toLowerCase() === CARPETA_CLIENTE.toLowerCase();
+
+// `1146_completo.mp4` de la orden `1146` (dentro de `1146/Origen`). Otro sufijo (`_completo_v2`, `_borrador`) no cuenta.
+export function esVideoCompleto(nombre: string, orden: string) {
 	const m = /^(.+)_completo\.([a-z0-9]+)$/i.exec(nombre);
-	return !!m && EXTENSIONES.includes(m[2].toLowerCase()) && m[1].toLowerCase() === carpeta.toLowerCase();
+	return !!m && EXTENSIONES.includes(m[2].toLowerCase()) && m[1].toLowerCase() === orden.toLowerCase();
 }
 
 // "#1146" (como lo muestra Shopify) y "1146" son la misma orden.
 export const mismaOrden = (a: string, b: string) => a.trim().replace(/^#/, "").toLowerCase() === b.trim().replace(/^#/, "").toLowerCase();
 
-// Carpeta de la orden: directa si se conoce la raíz (DROPBOX_RAIZ), si no buscándola por nombre.
+// Carpeta `Origen` de la orden (la que se comparte): directa si se conoce la raíz (DROPBOX_RAIZ), si no buscando la
+// carpeta de la orden por nombre.
 export async function carpetaDeOrden(orden: string): Promise<string | null> {
-	if (config.raiz) {
+	const origenDe = async (carpeta: string) => {
 		try {
-			const m = await llamar<Entrada>("files/get_metadata", { path: `${config.raiz}/${orden}` });
+			const m = await llamar<Entrada>("files/get_metadata", { path: `${carpeta}/${CARPETA_CLIENTE}` });
 			return m[".tag"] === "folder" ? m.path_display : null;
 		} catch (e) {
 			if (noExiste(e)) return null;
 			throw e;
 		}
-	}
+	};
+	if (config.raiz) return origenDe(`${config.raiz}/${orden}`);
 	const r = await llamar<{ matches: { metadata: { metadata: Entrada } }[] }>("files/search_v2", {
 		query: orden,
 		options: { filename_only: true, file_status: "active", max_results: 100 },
 	});
 	const carpetas = r.matches.map((x) => x.metadata.metadata).filter((m) => m[".tag"] === "folder" && m.name.toLowerCase() === orden.toLowerCase());
-	return carpetas[0]?.path_display ?? null;
+	for (const c of carpetas) {
+		const origen = await origenDe(c.path_display);
+		if (origen) return origen;
+	}
+	return null;
 }
 
 const listo = (a: ArchivoDropbox) => a.size > 0 && a.is_downloadable !== false;
@@ -153,13 +165,15 @@ async function archivosDe(carpeta: string): Promise<Entrada[] | null> {
 	}
 }
 
-// Todos los formatos que ya están (mp4, mov…) de la orden; el primero es el que dispara el aviso. `guardada` es la
-// carpeta con la que ya se avisó o quedó pendiente: se usa tal cual: buscar por nombre podría elegir otra si hay
+// Todos los formatos que ya están (mp4, mov…) en `Origen`; el primero es el que dispara el aviso. `guardada` es la
+// carpeta `Origen` con la que ya se avisó o quedó pendiente: se usa tal cual: buscar por nombre podría elegir otra si hay
 // dos carpetas iguales, o no encontrarla aún por el retraso del índice. Solo si ya no existe se vuelve a buscar.
 export async function videoDeOrden(orden: string, guardada?: string | null): Promise<{ carpeta: string | null; videos: ArchivoDropbox[] }> {
-	let carpeta = guardada || (await carpetaDeOrden(orden));
+	// Una guardada que no termina en `Origen` es de antes de separar `Clip` y `Origen`: no se comparte, se busca de nuevo.
+	const vigente = guardada && esCarpetaCliente(nombreDe(guardada)) ? guardada : null;
+	let carpeta = vigente || (await carpetaDeOrden(orden));
 	let archivos = carpeta ? await archivosDe(carpeta) : null;
-	if (!archivos && guardada) {
+	if (!archivos && vigente) {
 		carpeta = await carpetaDeOrden(orden);
 		archivos = carpeta ? await archivosDe(carpeta) : null;
 	}
@@ -168,18 +182,33 @@ export async function videoDeOrden(orden: string, guardada?: string | null): Pro
 }
 
 // ─── Cambios (webhook) ──────────────────────────────────────────────────────
-// Un archivo es el video de una orden si se llama `<orden>_completo.<video>`, está dentro de la carpeta `<orden>` y
-// ya se puede descargar. Con DROPBOX_RAIZ, la carpeta tiene que estar justo en la raíz (lo mismo que mira
+// Un archivo es el video de una orden si se llama `<orden>_completo.<video>`, está dentro de `<orden>/Origen` y ya se
+// puede descargar. Con DROPBOX_RAIZ, la carpeta de la orden tiene que estar justo en la raíz (lo mismo que mira
 // carpetaDeOrden); sin ella, a cualquier profundidad.
 export function comoVideo(e: Entrada): { orden: string; archivo: ArchivoDropbox } | null {
 	if (e[".tag"] !== "file") return null;
-	const carpeta = carpetaDe(e);
-	const orden = carpeta.split("/").at(-1) ?? "";
-	if (config.raiz && carpeta.slice(0, -orden.length - 1).toLowerCase() !== config.raiz.toLowerCase()) return null;
+	const partes = carpetaDe(e).split("/"); // ["", ..., "<orden>", "Origen"]
+	if (partes.length < 3 || !esCarpetaCliente(partes.at(-1) ?? "")) return null;
+	const orden = partes.at(-2) ?? "";
+	if (!orden || (config.raiz && partes.slice(0, -2).join("/").toLowerCase() !== config.raiz.toLowerCase())) return null;
 	return esVideoCompleto(e.name, orden) && listo(e) ? { orden, archivo: e } : null;
 }
 
-// La carpeta de la orden, que es lo que se comparte con el cliente (puede haber varios formatos del video).
+// Un `<orden>_completo.<video>` que quedó en la carpeta de la orden o en `Clip` en vez de `Origen`: no se envía, pero el
+// equipo debería saberlo. Devuelve la orden, o null si no es ese caso.
+export function completoFueraDeOrigen(e: Entrada): string | null {
+	if (e[".tag"] !== "file") return null;
+	const partes = carpetaDe(e).split("/");
+	// Directo en `<orden>/` (el nombre del archivo marca la orden) o en `<orden>/Clip/`.
+	const enClip = partes.at(-1)?.toLowerCase() === "clip";
+	const orden = partes.at(enClip ? -2 : -1) ?? "";
+	const base = partes.slice(0, enClip ? -2 : -1).join("/");
+	if (!orden || esCarpetaCliente(partes.at(-1) ?? "") || !esVideoCompleto(e.name, orden)) return null;
+	if (config.raiz && base.toLowerCase() !== config.raiz.toLowerCase()) return null;
+	return orden;
+}
+
+// La carpeta donde está el archivo (`<orden>/Origen`), que es lo que se comparte con el cliente (puede haber varios formatos).
 export const carpetaDe = (archivo: ArchivoDropbox) => archivo.path_display.split("/").slice(0, -1).join("/");
 
 // El webhook no trae los cambios: hay que pedirlos con el cursor guardado.
@@ -216,6 +245,10 @@ export async function videosNuevos(cursor: string): Promise<{ videos: { orden: s
 			if (e[".tag"] === "deleted") borrados.push(e.path_lower);
 			const v = comoVideo(e);
 			if (v) videos.push(v);
+			else {
+				const fuera = completoFueraDeOrigen(e);
+				if (fuera) log("warn", "videos", { orden: fuera, aviso: `${e.name} está fuera de Origen: no se envía; moverlo a ${fuera}/Origen`, ruta: e.path_display });
+			}
 		}
 		if (!r.has_more) return { videos, borrados, cursor: r.cursor };
 		desde = r.cursor;

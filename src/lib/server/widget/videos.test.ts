@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { describe, it } from "node:test";
-import { configurarDropbox, esVideoCompleto, firmaValida, mismaOrden } from "./dropbox.ts";
+import { comoVideo, completoFueraDeOrigen, configurarDropbox, esVideoCompleto, firmaValida, mismaOrden } from "./dropbox.ts";
 
 describe("video completo", () => {
 	it("solo cuenta <orden>_completo.<video> dentro de la carpeta de esa orden", () => {
@@ -12,6 +12,31 @@ describe("video completo", () => {
 		assert.ok(!esVideoCompleto("1146_borrador.mp4", "1146"));
 		assert.ok(!esVideoCompleto("1147_completo.mp4", "1146"));
 		assert.ok(!esVideoCompleto("1146_completo.jpg", "1146"));
+	});
+
+	it("solo cuenta lo que está en <orden>/Origen", () => {
+		const f = (ruta: string) => ({ ".tag": "file" as const, name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta, size: 1, server_modified: "" });
+		configurarDropbox({ raiz: "/Ordenes" });
+		assert.equal(comoVideo(f("/Ordenes/1146/Origen/1146_completo.mp4"))?.orden, "1146");
+		assert.equal(comoVideo(f("/Ordenes/1146/origen/1146_completo.mov"))?.orden, "1146");
+		assert.equal(comoVideo(f("/Ordenes/1146/Clip/1146_completo.mp4")), null);
+		assert.equal(comoVideo(f("/Ordenes/1146/1146_completo.mp4")), null);
+		assert.equal(comoVideo(f("/Ordenes/1146/Origen/Reel.mp4")), null);
+		assert.equal(comoVideo(f("/Otra/1146/Origen/1146_completo.mp4")), null);
+		configurarDropbox({ raiz: "" });
+		assert.equal(comoVideo(f("/Otra/1146/Origen/1146_completo.mp4"))?.orden, "1146");
+	});
+
+	it("detecta un _completo que quedó fuera de Origen", () => {
+		const f = (ruta: string) => ({ ".tag": "file" as const, name: ruta.split("/").at(-1)!, path_lower: ruta.toLowerCase(), path_display: ruta, size: 1, server_modified: "" });
+		configurarDropbox({ raiz: "/Ordenes" });
+		assert.equal(completoFueraDeOrigen(f("/Ordenes/1146/1146_completo.mp4")), "1146");
+		assert.equal(completoFueraDeOrigen(f("/Ordenes/1146/Clip/1146_completo.mp4")), "1146");
+		assert.equal(completoFueraDeOrigen(f("/Ordenes/1146/Origen/1146_completo.mp4")), null);
+		assert.equal(completoFueraDeOrigen(f("/Ordenes/1146/Clip/Clip.mp4")), null);
+		assert.equal(completoFueraDeOrigen(f("/Ordenes/1146/1146_borrador.mp4")), null);
+		assert.equal(completoFueraDeOrigen(f("/Otra/1146/1146_completo.mp4")), null);
+		configurarDropbox({ raiz: "" });
 	});
 
 	it("'#1146' y '1146' son la misma orden", () => {

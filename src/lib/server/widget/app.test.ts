@@ -440,17 +440,17 @@ describe("video del cliente (Dropbox)", () => {
 
 	it("cuando aparece <orden>_completo, guarda el link, deja una nota y lanza el Salesbot una sola vez", async () => {
 		// El cursor se tomó al arrancar: el primer aviso ya trae el video.
-		subirADropbox("/Ordenes/1146/1146_borrador.mp4");
-		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		subirADropbox("/Ordenes/1146/Origen/1146_borrador.mp4");
+		subirADropbox("/Ordenes/1146/Origen/1146_completo.mp4");
 		assert.equal((await webhook()).status, 200);
 		await esperar(() => kommo.bots.length === 1);
 		assert.deepEqual(kommo.bots[0], { bot_id: 4242, entity_type: 2, entity_id: 7001 });
 		const link = kommo.lead.get(7001)?.find((v) => v.field_id === 802)?.values[0].value as unknown as string;
-		assert.equal(link, "https://www.dropbox.com/s/falso/1146"); // el link es el de la carpeta, no el del archivo
+		assert.equal(link, "https://www.dropbox.com/s/falso/Origen"); // el link es el de la carpeta Origen, no el del archivo
 		assert.ok(kommo.notas.some((n) => n.entity_id === 7001 && n.params.text.includes(link)));
 
 		// El mismo archivo vuelve a cambiar (o el aviso llega dos veces): no se manda de nuevo.
-		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		subirADropbox("/Ordenes/1146/Origen/1146_completo.mp4");
 		await webhook();
 		await pausa();
 		assert.equal(kommo.bots.length, 1);
@@ -458,7 +458,7 @@ describe("video del cliente (Dropbox)", () => {
 
 	it("otro formato del mismo video no se vuelve a enviar y queda en la carpeta compartida", async () => {
 		const enviados = kommo.bots.length;
-		subirADropbox("/Ordenes/1146/1146_completo.mov");
+		subirADropbox("/Ordenes/1146/Origen/1146_completo.mov");
 		await webhook();
 		await pausa();
 		assert.equal(kommo.bots.length, enviados);
@@ -467,11 +467,11 @@ describe("video del cliente (Dropbox)", () => {
 
 		// Borrar el video que se envió no rompe el link de la carpeta: sin nota. (Se vuelve a subir para los demás tests.)
 		const notas = kommo.notas.length;
-		borrarDeDropbox("/Ordenes/1146/1146_completo.mp4");
+		borrarDeDropbox("/Ordenes/1146/Origen/1146_completo.mp4");
 		await webhook();
 		await pausa();
 		assert.equal(kommo.notas.length, notas);
-		subirADropbox("/Ordenes/1146/1146_completo.mp4");
+		subirADropbox("/Ordenes/1146/Origen/1146_completo.mp4");
 		await webhook();
 		await pausa();
 		assert.equal(kommo.bots.length, enviados);
@@ -484,7 +484,7 @@ describe("video del cliente (Dropbox)", () => {
 		await pausa();
 		assert.equal(dropbox.cursorPerdido, false, "no se pidió un cursor nuevo");
 		const enviados = kommo.bots.length;
-		subirADropbox("/Ordenes/1150/1150_completo.mp4");
+		subirADropbox("/Ordenes/1150/Origen/1150_completo.mp4");
 		await webhook();
 		await esperar(() => kommo.bots.length === enviados + 1);
 		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7010 });
@@ -493,7 +493,7 @@ describe("video del cliente (Dropbox)", () => {
 
 	it("aunque no se puedan leer los cambios de Dropbox, los avisos pendientes se reintentan", async () => {
 		// Un video sin lead queda pendiente...
-		subirADropbox("/Ordenes/1151/1151_completo.mp4");
+		subirADropbox("/Ordenes/1151/Origen/1151_completo.mp4");
 		await webhook();
 		await pausa();
 		// ...y después Dropbox deja de dar cambios (cursor perdido y la raíz ya no existe) mientras llega el Order #.
@@ -515,7 +515,7 @@ describe("video del cliente (Dropbox)", () => {
 		const notas = kommo.notas.length;
 		const estado = await (await app.request("/videos/1146", { headers: W })).json();
 		assert.equal(estado.completo, true);
-		assert.equal(estado.carpeta, "/Ordenes/1146");
+		assert.equal(estado.carpeta, "/Ordenes/1146/Origen");
 		assert.ok(estado.videos.some((v: { nombre: string }) => v.nombre === "1146_completo.mp4"));
 		assert.equal(estado.lead, 7001);
 		assert.ok(estado.avisado);
@@ -527,7 +527,7 @@ describe("video del cliente (Dropbox)", () => {
 	it("con dos leads con el mismo Order # no manda nada y avisa en los dos", async () => {
 		kommo.lead.set(7002, [{ field_id: 801, values: [{ value: "1147" as never }] }]);
 		kommo.lead.set(7003, [{ field_id: 801, values: [{ value: "#1147" as never }] }]);
-		dropbox.cambios.push({ ".tag": "file", name: "1147_completo.mov", path_lower: "/ordenes/1147/1147_completo.mov", path_display: "/Ordenes/1147/1147_completo.mov", size: 99, server_modified: "2026-11-03T12:00:00Z" });
+		dropbox.cambios.push({ ".tag": "file", name: "1147_completo.mov", path_lower: "/ordenes/1147/origen/1147_completo.mov", path_display: "/Ordenes/1147/Origen/1147_completo.mov", size: 99, server_modified: "2026-11-03T12:00:00Z" });
 		const r = await (await app.request("/videos/1147", { method: "POST", headers: W })).json();
 		assert.equal(r.estado, "varios_leads");
 		assert.deepEqual(r.leads.sort(), [7002, 7003]);
@@ -547,7 +547,7 @@ describe("video del cliente (Dropbox)", () => {
 		kommo.lead.set(7012, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
 		kommo.embudos.set(7012, VENTAS);
 		kommo.lead.set(7013, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
-		subirADropbox("/Ordenes/1152/1152_completo.mp4");
+		subirADropbox("/Ordenes/1152/Origen/1152_completo.mp4");
 		const enviados = kommo.bots.length;
 		const r = await (await app.request("/videos/1152", { method: "POST", headers: W })).json();
 		assert.notEqual(r.estado, "varios_leads"); // antes: dos leads con el mismo Order # = conflicto
@@ -559,14 +559,14 @@ describe("video del cliente (Dropbox)", () => {
 		// Si solo existe el de Ventas, no hay lead al que avisar: queda pendiente.
 		kommo.lead.set(7014, [{ field_id: 801, values: [{ value: "1153" as never }] }]);
 		kommo.embudos.set(7014, VENTAS);
-		subirADropbox("/Ordenes/1153/1153_completo.mp4");
+		subirADropbox("/Ordenes/1153/Origen/1153_completo.mp4");
 		const sinLead = await (await app.request("/videos/1153", { method: "POST", headers: W })).json();
 		assert.equal(sinLead.estado, "sin_lead");
 		assert.ok(!kommo.bots.some((b) => b.entity_id === 7014));
 	});
 
 	it("un video sin lead queda pendiente y se envía cuando aparece el Order #", async () => {
-		subirADropbox("/Ordenes/1148/1148_completo.mp4");
+		subirADropbox("/Ordenes/1148/Origen/1148_completo.mp4");
 		await webhook();
 		await pausa();
 		assert.equal((await (await app.request("/videos/1148", { headers: W })).json()).pendiente, true);
@@ -579,11 +579,23 @@ describe("video del cliente (Dropbox)", () => {
 
 	it("con DROPBOX_RAIZ solo cuentan las carpetas que están en la raíz", async () => {
 		kommo.lead.set(7005, [{ field_id: 801, values: [{ value: "1149" as never }] }]);
-		subirADropbox("/Ordenes/viejas/1149/1149_completo.mp4");
-		subirADropbox("/Otra/1149/1149_completo.mp4");
+		subirADropbox("/Ordenes/viejas/1149/Origen/1149_completo.mp4");
+		subirADropbox("/Otra/1149/Origen/1149_completo.mp4");
 		await webhook();
 		await pausa();
 		assert.ok(!kommo.bots.some((b) => b.entity_id === 7005));
+	});
+
+	it("un _completo en Clip o en la carpeta de la orden no avisa", async () => {
+		kommo.lead.set(7006, [{ field_id: 801, values: [{ value: "1160" as never }] }]);
+		const enviados = kommo.bots.length;
+		subirADropbox("/Ordenes/1160/Clip/1160_completo.mp4");
+		subirADropbox("/Ordenes/1160/1160_completo.mp4");
+		subirADropbox("/Ordenes/1160/Origen/Reel.mp4");
+		await webhook();
+		await pausa();
+		assert.equal(kommo.bots.length, enviados);
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7006));
 	});
 
 	it("si se borra la carpeta de una orden ya enviada, deja una nota en el lead", async () => {

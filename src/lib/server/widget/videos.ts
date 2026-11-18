@@ -1,5 +1,6 @@
-// Video del cliente: cuando en Dropbox aparece `<orden>/<orden>_completo.mp4`, el lead con ese "Order #" recibe el link
-// de la CARPETA de la orden (puede haber varios formatos) en "Video (link)", una nota y el Salesbot que se lo manda.
+// Video del cliente: cuando en Dropbox aparece `<orden>/Origen/<orden>_completo.mp4`, el lead con ese "Order #" recibe el
+// link de la carpeta `Origen` (puede haber varios formatos; `Clip` y el resto de la orden son privados) en "Video (link)",
+// una nota y el Salesbot que se lo manda.
 // Se avisa con el primer `_completo`. Lo dispara el webhook, un repaso cada 10 min o POST /api/videos/:orden.
 //
 // Tabla `videos`: `avisado` se marca de forma atómica ANTES de lanzar el bot (dos réplicas nunca lo mandan dos veces) y
@@ -71,7 +72,7 @@ export async function revisarVideo(db: Db, orden: string, opciones: { archivo?: 
 		}
 
 		const [lead] = leads;
-		// Se comparte la carpeta, no el archivo: a veces hay varios formatos del mismo video.
+		// Se comparte `<orden>/Origen`, no el archivo (a veces hay varios formatos) ni la carpeta de la orden (tiene `Clip`).
 		const link = await linkCompartido(carpeta);
 		if (!(await reclamar(db, orden, lead, carpeta, link))) return yaAvisado(await registroVideo(db, orden));
 		try {

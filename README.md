@@ -143,7 +143,7 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `GET/POST /opciones` | Opciones compartidas: metales, quilates, piedras, formas, ubicaciones y campos extra de la orden |
 | `POST /ia/traducir` | Traduce los nombres de las filas de la orden (y, si se pide, los valores). Sin IA, los devuelve igual |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
-| `GET/POST /videos/webhook` | Webhook de Dropbox (firmado; no pide `X-Widget-Key`): avisa al lead cuando aparece `<orden>/<orden>_completo.mp4` |
+| `GET/POST /videos/webhook` | Webhook de Dropbox (firmado; no pide `X-Widget-Key`): avisa al lead cuando aparece `<orden>/Origen/<orden>_completo.mp4` |
 | `GET/POST /videos/:orden` | Estado del video de una orden en Dropbox (GET, sin efectos) / revisarlo y avisar al lead a mano (POST) |
 
 Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud`, `/api/admin` y `/api/videos/webhook` pide además el header
@@ -214,18 +214,19 @@ Es privada: sin `PANEL_KEY` o con otra clave responde 404; abierta directo en un
 
 ### Video del cliente (Dropbox)
 
-Cada orden tiene en Dropbox una carpeta con el **número de la orden pagada de Shopify** (`1146/`). Cuando el video
-está terminado se llama `1146_completo.mp4` (también `.mov`, `.m4v`, `.avi`, `.mkv`). Dropbox avisa al webhook; la
+Cada orden tiene en Dropbox una carpeta con el **número de la orden pagada de Shopify** (`1146/`) con dos
+subcarpetas: `Clip` (lo que se graba en el proceso, privado) y `Origen` (lo que ve el cliente). Cuando el video está
+terminado se sube `1146/Origen/1146_completo.mp4` (también `.mov`, `.m4v`, `.avi`, `.mkv`). Dropbox avisa al webhook; la
 app busca el lead cuyo **Order #** es `1146` (o `#1146`) y:
 
-1. crea un link compartido de Dropbox a la **carpeta de la orden** (no al archivo: a veces hay varios formatos, `.mp4`
-   y `.mov`) y lo guarda en **Video (link)**;
+1. crea un link compartido de Dropbox a la subcarpeta **`1146/Origen`** (no al archivo: a veces hay varios formatos, `.mp4`
+   y `.mov`; ni a la carpeta de la orden, que tiene `Clip`) y lo guarda en **Video (link)**;
 2. deja una nota en el lead con el link;
 3. lanza el Salesbot `KOMMO_BOT_VIDEO`, que manda el link por WhatsApp y marca **Video enviado**.
 
 Se avisa con el primer `_completo` que aparece; los formatos que se suban después ya están en la carpeta compartida.
-**Ojo:** el cliente ve todo lo que haya en esa carpeta (invoice, orden de producción, borradores). Para evitarlo, los
-videos tendrían que vivir en una subcarpeta aparte.
+El cliente solo ve `Origen`; nada de lo demás de la orden se comparte. Los videos de `Clip` o sueltos en `1146/` no
+disparan nada. Se avisa una sola vez: si reemplazan el `_completo`, el cliente ve el nuevo con el mismo link.
 
 Cada orden se avisa una sola vez (tabla `videos`), aunque haya varias réplicas. Si hay dos leads con el mismo Order #,
 no se envía nada y queda una nota en los dos. Lógica: `src/lib/server/widget/dropbox.ts` y `videos.ts`.

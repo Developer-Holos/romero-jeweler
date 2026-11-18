@@ -15,7 +15,7 @@ Proyecto de Holos para **Romero Jeweler** (joyería a la medida en Miami), conec
 | API del widget | `src/routes/api` + `src/lib/server/widget` | Rutas de SvelteKit que usa el widget: PDF (Playwright), IA (OpenAI), Postgres y archivos en Kommo |
 | Seguimientos con IA | `src/routes/api/kommo`, `src/routes/api/seguimientos` + `mensajes.ts`, `seguimientos.ts` | Webhooks de Kommo: guarda el chat comprimido y, con la señal del bot (día 3 y 7), pide a OpenAI el mensaje, lo deja en "[V] - Mensaje Seguimiento" y lanza el Bot 10394 |
 | Panel de entregas | `src/routes/panel/entregas` + `entregas.ts` | Página para el panel de control de Kommo (iframe): piezas por fecha de entrega estimada (campo 544100, "1. F. Entrega"), con clave `?clave=` (`PANEL_KEY`) |
-| Video del cliente | `src/routes/api/videos` + `src/lib/server/widget/dropbox.ts`, `videos.ts` | Webhook de Dropbox: cuando aparece `<orden>/<orden>_completo.mp4`, guarda el link en el lead con ese "Order #" y lanza el Salesbot que se lo manda |
+| Video del cliente | `src/routes/api/videos` + `src/lib/server/widget/dropbox.ts`, `videos.ts` | Webhook de Dropbox: cuando aparece `<orden>/Origen/<orden>_completo.mp4`, guarda el link en el lead con ese "Order #" y lanza el Salesbot que se lo manda |
 
 ## Arquitectura del widget de invoice
 
@@ -133,17 +133,17 @@ En **Linux** (Fedora, 2026-11-03) `corepack pnpm check`, `build` (con `KOMMO_SUB
   iframe de `ORIGENES` y rechaza abrirse directo en una pestaña (`panel` en `hooks.server.ts`).
   `hooks.server.ts` decide con `event.route.id`, no con `url.pathname`: la URL llega sin decodificar y `/%61pi/…`
   se saltaba la guardia. Los demás errores abiertos están en `docs/DECISIONES.md`, "Revisión de código (2026-11-03)".
-- **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de la carpeta `<orden>` (`esVideoCompleto`). El
+- **Video de Dropbox**: solo cuenta `<orden>_completo.<video>` dentro de `<orden>/Origen` (`esVideoCompleto`, `comoVideo`; `Clip` es privado y no dispara nada; un `_completo` fuera de `Origen` solo deja un `warn` `videos`, `completoFueraDeOrigen`). El
   orden es el **número de la orden pagada** y se compara con el campo "Order #" de los leads **del embudo Producción** (`KOMMO_EMBUDO_ENTREGAS`; `#1146` = `1146`). Una orden pagada tiene dos leads con ese Order #: el de Ventas (ganado, copia histórica) y el de Producción; el de Ventas se ignora, si no daría siempre "varios leads". Una orden se
   avisa una sola vez, también con varias réplicas: `avisado` se marca con un upsert atómico **antes** de lanzar el bot
   (`reclamar` en `videos.ts`) y se desmarca si el bot falla; para reenviar, borrar su fila. Una fila con `carpeta` (la de
-  la orden) y sin `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada
+  `Origen`) y sin `avisado` es un aviso pendiente (sin lead, varios leads o un error) que se reintenta en cada pasada
   (webhook o repaso cada 10 min, 30 días) usando la carpeta guardada, sin buscarla por nombre: por eso el cursor puede
   avanzar aunque una orden falle. El cursor se toma en el `init` de `hooks.server.ts`, no con el primer webhook (si no,
-  ese video se pierde). Con `DROPBOX_RAIZ` solo cuenta `<raiz>/<orden>/…`, igual en el webhook y en
+  ese video se pierde). Con `DROPBOX_RAIZ` solo cuenta `<raiz>/<orden>/Origen/…`, igual en el webhook y en
   `GET/POST /api/videos/:orden` (`comoVideo`).
-  En "Video (link)" va el link de la **carpeta** de la orden, no el del archivo (a veces hay varios formatos); se avisa
-  con el primer `_completo`. Se pide público y falla si el equipo no lo permite. El cliente ve todo lo de esa carpeta.
+  En "Video (link)" va el link de la carpeta **`Origen`**, no el del archivo (a veces hay varios formatos); se avisa
+  con el primer `_completo`. Se pide público y falla si el equipo no lo permite. Se comparte **solo `<orden>/Origen`** (es lo que se guarda en `videos.carpeta`; una fila vieja que apunte a `<orden>` se ignora y se busca `Origen`).
   El webhook de Dropbox va sin `X-Widget-Key` (lo protege la firma); el CSRF de SvelteKit ya no corta `text/plain` (ver webhooks de Kommo). `search_v2` tarda en indexar: con
   `DROPBOX_RAIZ` se va directo a la carpeta. En una cuenta de equipo la ruta va **desde el espacio raíz** (en la de Holos:
   `/Yanrr0926 Team Folder/New`, no `/New`); la app manda `Dropbox-API-Path-Root` siempre que ese espacio sea distinto del personal (`espacioRaiz`). "Video (link)" y "Video enviado" se crean a mano en Kommo (el widget no los
