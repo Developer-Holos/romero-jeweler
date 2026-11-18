@@ -17,6 +17,7 @@ const leer = async (req: IncomingMessage) => {
 
 // Kommo falso: guarda lo que se le sube para poder revisarlo.
 type ValorCampo = { field_id: number; field_name?: string; field_type?: string; values: { value: Record<string, unknown> }[] };
+const servicio = (valor: string) => ({ field_id: 172950, field_name: "Servicio", values: [{ value: valor as never }] }); // campo "Servicio" del lead
 const kommo = {
 	archivos: new Map<string, { nombre: string; tipo: string; datos: Buffer }>(),
 	lead: new Map<number, ValorCampo[]>(), // valores de campos por lead (cada PATCH los va sumando)
@@ -427,7 +428,7 @@ describe("video del cliente (Dropbox)", () => {
 	before(() => {
 		// Los campos de la pestaña Orden (Video (link) se crea a mano) y el lead con su Order #.
 		kommo.campos.push({ id: 801, name: "Order #", type: "text", group_id: null, sort: 10 }, { id: 802, name: "Video (link)", type: "url", group_id: null, sort: 16 });
-		kommo.lead.set(7001, [{ field_id: 801, values: [{ value: "1146" as never }] }]);
+		kommo.lead.set(7001, [{ field_id: 801, values: [{ value: "1146" as never }] }, servicio("Origen")]);
 	});
 
 	it("responde el challenge de Dropbox y rechaza un aviso sin firma válida", async () => {
@@ -478,7 +479,7 @@ describe("video del cliente (Dropbox)", () => {
 	});
 
 	it("si el cursor guardado apunta a una carpeta que ya no existe, se renueva y los videos siguientes se avisan", async () => {
-		kommo.lead.set(7010, [{ field_id: 801, values: [{ value: "1150" as never }] }]);
+		kommo.lead.set(7010, [{ field_id: 801, values: [{ value: "1150" as never }] }, servicio("Origen")]);
 		dropbox.cursorPerdido = true;
 		await webhook(); // antes del arreglo: 409 path/not_found en cada pasada, para siempre
 		await pausa();
@@ -499,7 +500,7 @@ describe("video del cliente (Dropbox)", () => {
 		// ...y después Dropbox deja de dar cambios (cursor perdido y la raíz ya no existe) mientras llega el Order #.
 		dropbox.cursorPerdido = true;
 		dropbox.raizInexistente = true;
-		kommo.lead.set(7011, [{ field_id: 801, values: [{ value: "1151" as never }] }]);
+		kommo.lead.set(7011, [{ field_id: 801, values: [{ value: "1151" as never }] }, servicio("Origen")]);
 		const enviados = kommo.bots.length;
 		await webhook();
 		await esperar(() => kommo.bots.length === enviados + 1);
@@ -525,8 +526,8 @@ describe("video del cliente (Dropbox)", () => {
 	});
 
 	it("con dos leads con el mismo Order # no manda nada y avisa en los dos", async () => {
-		kommo.lead.set(7002, [{ field_id: 801, values: [{ value: "1147" as never }] }]);
-		kommo.lead.set(7003, [{ field_id: 801, values: [{ value: "#1147" as never }] }]);
+		kommo.lead.set(7002, [{ field_id: 801, values: [{ value: "1147" as never }] }, servicio("Origen")]);
+		kommo.lead.set(7003, [{ field_id: 801, values: [{ value: "#1147" as never }] }, servicio("Origen")]);
 		dropbox.cambios.push({ ".tag": "file", name: "1147_completo.mov", path_lower: "/ordenes/1147/origen/1147_completo.mov", path_display: "/Ordenes/1147/Origen/1147_completo.mov", size: 99, server_modified: "2026-11-03T12:00:00Z" });
 		const r = await (await app.request("/videos/1147", { method: "POST", headers: W })).json();
 		assert.equal(r.estado, "varios_leads");
@@ -544,25 +545,58 @@ describe("video del cliente (Dropbox)", () => {
 
 	it("solo cuentan los leads del embudo Producción: el de Ventas con el mismo Order # (copia histórica) se ignora", async () => {
 		const VENTAS = 14630839;
-		kommo.lead.set(7012, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
+		kommo.lead.set(7012, [{ field_id: 801, values: [{ value: "1152" as never }] }, servicio("Origen")]);
 		kommo.embudos.set(7012, VENTAS);
-		kommo.lead.set(7013, [{ field_id: 801, values: [{ value: "1152" as never }] }]);
+		kommo.lead.set(7013, [{ field_id: 801, values: [{ value: "1152" as never }] }, servicio("Origen")]);
 		subirADropbox("/Ordenes/1152/Origen/1152_completo.mp4");
-		const enviados = kommo.bots.length;
 		const r = await (await app.request("/videos/1152", { method: "POST", headers: W })).json();
 		assert.notEqual(r.estado, "varios_leads"); // antes: dos leads con el mismo Order # = conflicto
-		assert.deepEqual(kommo.bots.at(-1), { bot_id: 4242, entity_type: 2, entity_id: 7013 });
-		assert.equal(kommo.bots.length, enviados + 1);
-		assert.ok(!kommo.notas.some((n) => n.entity_id === 7012), "el lead de Ventas no recibe nada");
-		kommo.bots.pop(); // los tests que siguen cuentan los bots lanzados
+		assert.equal(r.lead, 7013);
+		assert.ok(kommo.bots.some((b) => b.entity_id === 7013));
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7012) && !kommo.notas.some((n) => n.entity_id === 7012), "el lead de Ventas no recibe nada");
+		kommo.bots.splice(kommo.bots.findIndex((b) => b.entity_id === 7013), 1); // los tests que siguen cuentan los bots lanzados
 
 		// Si solo existe el de Ventas, no hay lead al que avisar: queda pendiente.
-		kommo.lead.set(7014, [{ field_id: 801, values: [{ value: "1153" as never }] }]);
+		kommo.lead.set(7014, [{ field_id: 801, values: [{ value: "1153" as never }] }, servicio("Origen")]);
 		kommo.embudos.set(7014, VENTAS);
 		subirADropbox("/Ordenes/1153/Origen/1153_completo.mp4");
 		const sinLead = await (await app.request("/videos/1153", { method: "POST", headers: W })).json();
 		assert.equal(sinLead.estado, "sin_lead");
 		assert.ok(!kommo.bots.some((b) => b.entity_id === 7014));
+	});
+
+	it("solo el servicio Origen recibe el video: con otro servicio (o vacío) se ignora y se detiene todo", async () => {
+		const sinTocar = () => [kommo.bots.length, kommo.notas.length];
+		// Esencia: ni link, ni nota, ni bot, ni pendiente.
+		kommo.lead.set(7015, [{ field_id: 801, values: [{ value: "1154" as never }] }, servicio("Esencia")]);
+		subirADropbox("/Ordenes/1154/Origen/1154_completo.mp4");
+		const antes = sinTocar();
+		const r = await (await app.request("/videos/1154", { method: "POST", headers: W })).json();
+		assert.equal(r.estado, "ignorado");
+		assert.deepEqual(r.leads, [7015]);
+		assert.equal(kommo.lead.get(7015)?.some((v) => v.field_id === 802), false, "no se guardó el link");
+		assert.deepEqual(sinTocar(), antes);
+		assert.equal((await (await app.request("/videos/1154", { headers: W })).json()).pendiente, false);
+
+		// Sin servicio también se ignora.
+		kommo.lead.set(7016, [{ field_id: 801, values: [{ value: "1155" as never }] }]);
+		subirADropbox("/Ordenes/1155/Origen/1155_completo.mp4");
+		assert.equal((await (await app.request("/videos/1155", { method: "POST", headers: W })).json()).estado, "ignorado");
+		assert.deepEqual(sinTocar(), antes);
+
+		// Dos leads de Producción con la misma orden, uno Esencia y otro Origen: el Origen recibe, el otro no cuenta.
+		kommo.lead.set(7017, [{ field_id: 801, values: [{ value: "1156" as never }] }, servicio("Esencia")]);
+		kommo.lead.set(7018, [{ field_id: 801, values: [{ value: "1156" as never }] }, servicio("Origen")]);
+		subirADropbox("/Ordenes/1156/Origen/1156_completo.mp4");
+		const mixto = await (await app.request("/videos/1156", { method: "POST", headers: W })).json();
+		assert.equal(mixto.lead, 7018);
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7017));
+		kommo.bots.splice(kommo.bots.findIndex((b) => b.entity_id === 7018), 1);
+
+		// Y las pasadas de webhook y repaso siguientes no reviven lo ignorado.
+		await webhook();
+		await pausa();
+		assert.ok(!kommo.bots.some((b) => b.entity_id === 7015 || b.entity_id === 7016));
 	});
 
 	it("un video sin lead queda pendiente y se envía cuando aparece el Order #", async () => {
@@ -572,13 +606,13 @@ describe("video del cliente (Dropbox)", () => {
 		assert.equal((await (await app.request("/videos/1148", { headers: W })).json()).pendiente, true);
 		assert.equal(kommo.bots.length, 1);
 
-		kommo.lead.set(7004, [{ field_id: 801, values: [{ value: "1148" as never }] }]);
+		kommo.lead.set(7004, [{ field_id: 801, values: [{ value: "1148" as never }] }, servicio("Origen")]);
 		await webhook(); // sin cambios nuevos: lo levanta el reintento
 		await esperar(() => kommo.bots.some((b) => b.entity_id === 7004));
 	});
 
 	it("con DROPBOX_RAIZ solo cuentan las carpetas que están en la raíz", async () => {
-		kommo.lead.set(7005, [{ field_id: 801, values: [{ value: "1149" as never }] }]);
+		kommo.lead.set(7005, [{ field_id: 801, values: [{ value: "1149" as never }] }, servicio("Origen")]);
 		subirADropbox("/Ordenes/viejas/1149/Origen/1149_completo.mp4");
 		subirADropbox("/Otra/1149/Origen/1149_completo.mp4");
 		await webhook();
@@ -587,7 +621,7 @@ describe("video del cliente (Dropbox)", () => {
 	});
 
 	it("un _completo en Clip o en la carpeta de la orden no avisa", async () => {
-		kommo.lead.set(7006, [{ field_id: 801, values: [{ value: "1160" as never }] }]);
+		kommo.lead.set(7006, [{ field_id: 801, values: [{ value: "1160" as never }] }, servicio("Origen")]);
 		const enviados = kommo.bots.length;
 		subirADropbox("/Ordenes/1160/Clip/1160_completo.mp4");
 		subirADropbox("/Ordenes/1160/1160_completo.mp4");

@@ -31,10 +31,11 @@ export class ErrorKommo extends Error {
 }
 
 // La fija servicio.ts con las variables de entorno (y los tests, con un Kommo falso).
-// `embudo` es el de Producción: el video solo se busca en sus leads (el lead de Ventas queda como registro histórico).
-let config = { url: "", token: "", embudo: 0 };
-export function configurarKommo(url: string, token: string, embudo = 0) {
-	config = { url: url.replace(/\/+$/, ""), token, embudo };
+// `video`: lo que decide qué leads reciben el video del cliente (ver `leadsPorOrden`).
+export type FiltroVideo = { embudo: number; campoServicio: number };
+let config = { url: "", token: "", video: { embudo: 0, campoServicio: 0 } as FiltroVideo };
+export function configurarKommo(url: string, token: string, video: FiltroVideo) {
+	config = { url: url.replace(/\/+$/, ""), token, video };
 	driveUrl = null;
 }
 
@@ -202,17 +203,25 @@ export async function campoPorNombre(nombre: string) {
 
 type LeadConValores = { id: number; pipeline_id?: number; custom_fields_values?: { field_id: number; values?: { value?: unknown }[] }[] | null };
 
-// Leads del embudo de Producción cuyo "Order #" es exactamente `orden`. Una orden pagada tiene dos leads con el mismo
-// Order #: el de Ventas (ganado, registro histórico) y el de Producción; solo el segundo cuenta. La búsqueda de Kommo
+// Solo los clientes de este servicio (campo "Servicio") reciben el video; los demás se ignoran por completo.
+export const SERVICIO_VIDEO = "Origen";
+
+// Leads cuyo "Order #" es exactamente `orden`, del embudo Producción y del servicio Origen. Una orden pagada tiene dos
+// leads con el mismo Order #: el de Ventas (ganado, copia histórica) y el de Producción; solo el segundo cuenta.
+// `ignorados` son los de Producción con ese Order # que no son Origen (o no tienen servicio). La búsqueda de Kommo
 // (query) es por texto en todos los campos, así que se vuelve a comparar el campo.
-export async function leadsPorOrden(orden: string): Promise<number[]> {
+export async function leadsPorOrden(orden: string): Promise<{ leads: number[]; ignorados: { id: number; servicio: string }[] }> {
 	const campo = await campoPorNombre(CAMPO_ORDEN);
 	if (!campo) throw new ErrorKommo(`No existe el campo "${CAMPO_ORDEN}" (lo crea el widget en la pestaña Orden)`, 404);
 	const leads = await todos<LeadConValores>(`/api/v4/leads?query=${encodeURIComponent(orden)}`, "leads");
-	return leads
-		.filter((l) => !config.embudo || l.pipeline_id === config.embudo)
-		.filter((l) => l.custom_fields_values?.find((c) => c.field_id === campo.id)?.values?.some((v) => mismaOrden(String(v.value ?? ""), orden)))
-		.map((l) => l.id);
+	const valor = (l: LeadConValores, campoId: number) => l.custom_fields_values?.find((c) => c.field_id === campoId)?.values;
+	const servicio = (l: LeadConValores) => String(valor(l, config.video.campoServicio)?.[0]?.value ?? "").trim();
+	const deProduccion = leads.filter((l) => l.pipeline_id === config.video.embudo && valor(l, campo.id)?.some((v) => mismaOrden(String(v.value ?? ""), orden)));
+	const esOrigen = (l: LeadConValores) => servicio(l).toLowerCase() === SERVICIO_VIDEO.toLowerCase();
+	return {
+		leads: deProduccion.filter(esOrigen).map((l) => l.id),
+		ignorados: deProduccion.filter((l) => !esOrigen(l)).map((l) => ({ id: l.id, servicio: servicio(l) })),
+	};
 }
 
 // El lead con sus campos: Kommo ya manda el nombre y el tipo de cada uno junto a sus valores.

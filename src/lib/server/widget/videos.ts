@@ -46,7 +46,8 @@ export type Resultado =
 	| { estado: "avisado"; lead: number; link: string; bot: boolean }
 	| { estado: "ya_avisado"; lead: number | null; link: string | null; avisado: Date | null }
 	| { estado: "sin_video"; carpeta: string | null }
-	| { estado: "sin_lead" | "varios_leads"; leads: number[]; link: null };
+	| { estado: "sin_lead" | "varios_leads"; leads: number[]; link: null }
+	| { estado: "ignorado"; leads: number[]; servicio: string };
 
 const yaAvisado = (r: Registro | null): Resultado => ({ estado: "ya_avisado", lead: r?.lead_id ? Number(r.lead_id) : null, link: r?.link ?? null, avisado: r?.avisado ?? null });
 
@@ -59,7 +60,14 @@ export async function revisarVideo(db: Db, orden: string, opciones: { archivo?: 
 	if (!videos.length || !carpeta) return { estado: "sin_video", carpeta };
 
 	try {
-		const leads = await leadsPorOrden(orden);
+		const { leads, ignorados } = await leadsPorOrden(orden);
+		if (!leads.length && ignorados.length) {
+			// El lead de Producción no es del servicio Origen: no se avisa, no se deja nota ni pendiente y se detiene todo.
+			const servicio = ignorados.map((i) => i.servicio || "(vacío)").join(", ");
+			log(ignorados.some((i) => !i.servicio) ? "warn" : "info", "videos", { orden, aviso: `ignorada: el lead de Producción no es del servicio Origen (${servicio})`, leads: ignorados.map((i) => i.id) });
+			await db.query("update videos set carpeta = null, actualizado = now() where orden = $1 and avisado is null", [orden.toLowerCase()]);
+			return { estado: "ignorado", leads: ignorados.map((i) => i.id), servicio };
+		}
 		if (leads.length !== 1) {
 			// Sin lead: queda pendiente hasta que alguien llene el Order #. Con varios no se adivina: se avisa en cada uno,
 			// una sola vez por cada combinación de leads, para que lo resuelva un asesor.

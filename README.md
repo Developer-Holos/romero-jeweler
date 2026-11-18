@@ -143,7 +143,7 @@ la interfaz, `node widget/_tour_src/tour.mjs --listar` dice qué falta traducir.
 | `GET/POST /opciones` | Opciones compartidas: metales, quilates, piedras, formas, ubicaciones y campos extra de la orden |
 | `POST /ia/traducir` | Traduce los nombres de las filas de la orden (y, si se pide, los valores). Sin IA, los devuelve igual |
 | `GET/PUT /admin/ia` | Modelo de IA, sin redesplegar (clave `ADMIN_KEY`) |
-| `GET/POST /videos/webhook` | Webhook de Dropbox (firmado; no pide `X-Widget-Key`): avisa al lead cuando aparece `<orden>/Origen/<orden>_completo.mp4` |
+| `GET/POST /videos/webhook` | Webhook de Dropbox (firmado; no pide `X-Widget-Key`): avisa al lead cuando aparece `<orden>/Origen/<orden>_completo.mp4` (solo si el lead de Producción tiene Servicio = Origen; con otro valor la orden se ignora: estado `ignorado`) |
 | `GET/POST /videos/:orden` | Estado del video de una orden en Dropbox (GET, sin efectos) / revisarlo y avisar al lead a mano (POST) |
 
 Basta con la URL. Si se define `WIDGET_KEY`, todo menos `/api/salud`, `/api/admin` y `/api/videos/webhook` pide además el header

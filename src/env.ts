@@ -26,6 +26,7 @@ export const variables = defineEnvVars({
   DROPBOX_REFRESH_TOKEN: { schema: opcional, description: 'Refresh token (token_access_type=offline)' },
   DROPBOX_RAIZ: { schema: (v) => opcional(v) ?? '', description: 'Carpeta que contiene las carpetas de las órdenes. Vacía: se buscan por nombre en todo Dropbox' },
   DROPBOX_API_URL: { schema: opcional, description: 'Solo para probar con un Dropbox simulado' },
+  KOMMO_CAMPO_SERVICIO: { schema: (v) => Number(opcional(v)) || 172950, description: 'Id del campo "Servicio" del lead: solo el servicio Origen recibe el video del cliente; los demás se ignoran' },
   KOMMO_BOT_VIDEO: { schema: (v) => Number(opcional(v)) || undefined, description: 'Id del Salesbot que manda el link del video. Sin él, solo se guarda el link y una nota' },
 
   // Seguimientos con IA (/api/kommo/mensajes y /api/seguimientos). Necesitan OPENAI_API_KEY.
